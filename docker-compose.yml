@@ -1,0 +1,7 @@
+services:
+  podwave:
+    build: .
+    container_name: podwave
+    ports:
+      - "8080:80"
+    restart: unless-stopped
