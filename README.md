@@ -33,11 +33,21 @@ re-queue after a restart, and voiced segments are reused, so a crash does not st
 docker compose up -d --build     # then open http://localhost:8080
 ```
 
-or without Docker (Python 3.10+, no dependencies):
+or without Docker, with [uv](https://docs.astral.sh/uv/) (no third-party packages at all):
+
+```bash
+uv run server/podwave.py         # http://127.0.0.1:8080, uv picks Python >= 3.14
+```
+
+or with a plain interpreter — any Python 3.10–3.15 works, the server only uses the standard
+library:
 
 ```bash
 python3 server/podwave.py        # http://127.0.0.1:8080
 ```
+
+The image is `ghcr.io/astral-sh/uv:python3.15-trixie-slim` (uv + CPython 3.15), pinned by
+`.python-version`; `pyproject.toml` asks for `>= 3.14` and the suite passes on 3.14 and 3.15.
 
 Environment: `PODWAVE_DATA` (default `./data`), `PODWAVE_STATIC`, `PODWAVE_PORT` (8080),
 `PODWAVE_BIND` (`127.0.0.1`; set `0.0.0.0` to expose), `PODWAVE_TOKEN` (if set, every
@@ -89,13 +99,13 @@ an open server is an open cost meter and anyone on it can read the library.
 ## Tests
 
 ```bash
-python3 tests/e2e.py
+uv run tests/e2e.py            # or: python3 tests/e2e.py
 ```
 
 Starts the server with a mock OpenAI-compatible provider in a temp dir and checks 42
 things: job lifecycle, cancel and retry, resume after `SIGKILL`, WAV validity and
 duration, `Range` requests, masked config, path traversal, error paths. Nothing real is
-called.
+called. Passing on CPython 3.14.9 and 3.15.2.
 
 ## Notes and limits
 

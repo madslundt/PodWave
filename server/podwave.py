@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """PodWave server — static app + episode store + background job queue.
 
-Stdlib only (Python >= 3.10). Run:  python3 server/podwave.py
+Stdlib only (Python >= 3.10; the uv project and Docker image use 3.14+).
+Run:  uv run server/podwave.py   or   python3 server/podwave.py
 Env:
   PODWAVE_DATA   data dir, default ./data
   PODWAVE_STATIC static dir, default ../public relative to this file

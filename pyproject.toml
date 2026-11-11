@@ -1,0 +1,9 @@
+[project]
+name = "podwave"
+version = "1.1.0"
+description = "PodWave — AI podcast studio with a background job server"
+requires-python = ">=3.14"
+dependencies = []
+
+[tool.uv]
+package = false

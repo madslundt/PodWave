@@ -1,7 +1,10 @@
 .git
 .gitignore
+.python-version
 README.md
 docker-compose.yml
+pyproject.toml
+uv.lock
 tests/
 data/
 __pycache__/
