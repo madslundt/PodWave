@@ -3,5 +3,15 @@ services:
     build: .
     container_name: podwave
     ports:
-      - "8080:80"
+      - "8080:8080"
+    environment:
+      # Optional: seed keys here instead of editing data/config.json in the UI.
+      # PODWAVE_LLM_KEY: sk-...
+      # PODWAVE_TTS_KEY: sk-...
+      # PODWAVE_SEARCH_KEY: tvly-...
+      # Require a token on /api/* if you expose the port beyond localhost:
+      # PODWAVE_TOKEN: something-long-and-random
+      PODWAVE_BIND: 0.0.0.0
+    volumes:
+      - ./data:/data
     restart: unless-stopped

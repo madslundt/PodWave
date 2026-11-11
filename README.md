@@ -1,47 +1,107 @@
 # PodWave — AI Podcast Studio
 
-Generate a podcast episode from one or more topics, entirely in the browser. One static HTML file, no server, no build step, no dependencies — works on desktop and mobile.
+Write a podcast episode from a few topics: research, script, spoken audio. Runs as one
+small Python server, reachable from desktop and phone, and keeps generating after you
+close the tab.
 
 ## What it does
 
-1. **Brief** — enter topics (one per line), pick genre (non-fiction / fiction), format (two hosts or solo), length in minutes, optional style notes.
-2. **Research** — for non-fiction, queries Tavily (optional) and collects source links; otherwise uses the LLM's own knowledge.
-3. **Script** — the LLM plans an outline of beats, then writes each beat as spoken dialogue, targeting ~150 words/minute. Output is a JSON segment list (`{speaker, text}`) rendered as an editable script.
-4. **Audio** — each line is voiced via the configured TTS, decoded with Web Audio, joined with short gaps, peak-normalized and encoded as a downloadable 24 kHz mono WAV. Episodes can be saved to a local library (IndexedDB).
+1. **Brief** — topics (one per line), genre (non-fiction / fiction), format (two hosts or
+   solo), target length in minutes, optional style notes.
+2. **Research** — for non-fiction, Tavily (optional) collects sources; otherwise the model's
+   own knowledge is used.
+3. **Script** — the model plans 4–10 beats, then writes each beat as spoken dialogue
+   (~150 words/minute), returned as segments `{speaker, text}` and shown as an editable script.
+4. **Audio** — each line is voiced by the configured TTS, joined with short gaps, and stored
+   as a 24 kHz mono WAV you can play or download.
 
-## Configuration (Settings tab, stored in localStorage only)
+Two ways to run a job:
 
-- **LLM**: any OpenAI-compatible `/chat/completions` endpoint (OpenAI, OpenRouter, Groq, local llama.cpp/Ollama with a `/v1` route). Base URL + key + model.
+| | In this browser | On the server (background) |
+|---|---|---|
+| Tab must stay open | ✓ | — |
+| Works from any device | ✓ | ✓ |
+| Keys live in | browser `localStorage` | server `data/config.json` |
+| Stored audio | browser IndexedDB | server `data/` + Library |
+
+Queue it, close the laptop, come back to **Library** and press play. Interrupted jobs
+re-queue after a restart, and voiced segments are reused, so a crash does not start over.
+
+## Run it
+
+```bash
+docker compose up -d --build     # then open http://localhost:8080
+```
+
+or without Docker (Python 3.10+, no dependencies):
+
+```bash
+python3 server/podwave.py        # http://127.0.0.1:8080
+```
+
+Environment: `PODWAVE_DATA` (default `./data`), `PODWAVE_STATIC`, `PODWAVE_PORT` (8080),
+`PODWAVE_BIND` (`127.0.0.1`; set `0.0.0.0` to expose), `PODWAVE_TOKEN` (if set, every
+`/api/*` call needs `Authorization: Bearer <token>`). Keys can also be seeded with
+`PODWAVE_LLM_KEY`, `PODWAVE_TTS_KEY`, `PODWAVE_SEARCH_KEY`, `PODWAVE_LLM_MODEL`,
+`PODWAVE_LLM_BASE`, `PODWAVE_TTS_BASE`, `PODWAVE_TTS_MODEL`.
+
+## Configuration
+
+- **Server settings** (Settings tab, "This server"): used for background jobs. Written to
+  `data/config.json` with mode `0600`; the API only ever reports whether a key is set.
+- **Browser settings** (Settings tab): used when you click *Generate script* /
+  *Generate audio* on this device. Stored in `localStorage`, sent only to the providers
+  you configure.
+- **LLM**: any OpenAI-compatible `/chat/completions` (OpenAI, OpenRouter, Groq, a local
+  llama.cpp/Ollama `/v1`).
 - **Search**: Tavily or none.
-- **TTS**: OpenAI-compatible `/audio/speech` (per-speaker voices), ElevenLabs (per-speaker voice IDs), or the browser's built-in `speechSynthesis` (free, live playback, no file export).
-- Settings export/import as JSON (keys excluded unless you opt in).
+- **TTS**: OpenAI-compatible `/audio/speech` (WAV output) or ElevenLabs (`output_format=wav`).
+  Browser speech stays available for live playback only. If a provider returns MP3 and
+  `ffmpeg` is installed, the server converts it; otherwise it asks for WAV output.
+
+## API
+
+| | |
+|---|---|
+| `GET /api/health` | version, masked config, queue and library counts |
+| `GET/PUT /api/config` | server config, keys masked (`keySet: true`) |
+| `GET/PUT /api/brief` | last brief, so a reload or another device restores it |
+| `POST /api/jobs` | `{topics[], genre, format, minutes, style}` → `202 {id}` |
+| `GET /api/jobs` / `GET /api/jobs/{id}` | list / detail with stage, progress, log |
+| `POST /api/jobs/{id}/cancel` \| `/retry` | stop, or re-queue a failed job |
+| `DELETE /api/jobs/{id}` | forget the job (audio already stored is kept) |
+| `GET /api/episodes` | stored episodes |
+| `GET /api/episodes/{id}/audio` | WAV, with `Range` support for seeking |
+| `GET/PUT /api/episodes/{id}/script` | segments (edit text without re-voicing) |
+| `DELETE /api/episodes/{id}` | delete episode + audio file |
+
+Job states: `queued → running → done`, plus `error`, `canceled`; `canceling` while a running
+job notices the request. Stages: `research`, `outline`, `writing`, `voicing`, `encoding`.
 
 ## Privacy
 
-API keys live in your browser (localStorage / IndexedDB) and are only sent directly to the providers you configure. The page itself contains no analytics and no external scripts.
+Browser keys never leave the browser except in direct calls to the providers you set.
+Server keys stay in `data/config.json` (0600) and are never returned by the API. The page
+loads no third-party scripts. Research text is labelled untrusted in the prompt, so a page
+cannot steer the writer. If you expose the port, set `PODWAVE_TOKEN` or put it behind auth:
+an open server is an open cost meter and anyone on it can read the library.
 
-## Deploy with Docker
+## Tests
 
 ```bash
-docker build -t podwave .
-docker run -d -p 8080:80 --restart unless-stopped --name podwave podwave
-# or
-docker compose up -d --build
+python3 tests/e2e.py
 ```
 
-Then open http://localhost:8080. The image is `nginx:1.27-alpine` plus the static files (~5 MB); `docker/nginx.conf` adds gzip, SPA fallback and basic security headers. No environment variables are needed — provider keys are configured by each user in the app's Settings tab and never touch the server.
+Starts the server with a mock OpenAI-compatible provider in a temp dir and checks 42
+things: job lifecycle, cancel and retry, resume after `SIGKILL`, WAV validity and
+duration, `Range` requests, masked config, path traversal, error paths. Nothing real is
+called.
 
-## Run without Docker
+## Notes and limits
 
-Open `public/index.html` directly in a browser, or serve the folder with any static server.
-
-## Known limits / roadmap ideas
-
-- Long episodes: audio is a WAV, so ~2.9 MB per audio-minute; a client-side MP3/AAC encoder would shrink this.
-- No CORS from some providers when called from a browser — OpenAI and ElevenLabs work; some proxies block browser origins.
-- Ideas: RSS export for feeds, per-beat regeneration, voice preview before full render, episode transcripts alongside audio, PWA manifest for install-on-phone.
-
-## Notes
-
-- The built-in "sample script" button loads **illustrative example data** so the UI can be tried without keys; it is not fact-checked.
-- Research text is treated as untrusted data in the prompt (explicit anti-injection instruction).
+- Long episodes: WAV is ~2.9 MB/audio-minute; a client-side MP3 encoder would shrink that.
+- CORS: browsers block some providers from a browser origin (OpenAI and ElevenLabs are fine);
+  background jobs avoid the issue entirely.
+- Ideas: RSS feed, per-beat regeneration, voice preview before a full render, an MP3
+  encoder, PWA manifest for install-on-phone.
+- The built-in "sample script" is **example data**, not fact-checked.
