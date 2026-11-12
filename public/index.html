@@ -170,18 +170,20 @@ legend{font-size:14px;font-weight:600;padding:0 8px;color:var(--acc2)}
 
     <fieldset id="server-config" class="hidden">
       <legend>This server (background generation)</legend>
-      <p class="small">Used when jobs run without your browser. Saved to <code>data/config.json</code> on the server only, never in this page. Leave a key field empty to keep the one already stored.</p>
+      <p class="small">Used when jobs run without your browser. Saved to <code>data/config.json</code> on the server only, never in this page. Key fields are optional: leave empty to keep what is stored, or tick <em>remove stored key</em> for servers that need no auth (local LLM/TTS).</p>
       <label class="f">LLM base URL + model</label>
       <div class="row">
         <div><input type="text" id="sv-llm-base" placeholder="https://api.openai.com/v1"></div>
         <div><input type="text" id="sv-llm-model" placeholder="gpt-4.1-mini"></div>
       </div>
       <label class="f">LLM API key</label>
-      <input type="password" id="sv-llm-key" placeholder="set on the server">
+      <input type="password" id="sv-llm-key" placeholder="optional — blank = no key">
+      <label class="f" style="margin-top:4px"><input type="checkbox" id="sv-llm-key-clear" style="width:auto"> remove stored key (no auth)</label>
       <label class="f">Web search</label>
       <div class="row">
         <div><select id="sv-search-prov"><option value="none">None — model knowledge only</option><option value="tavily">Tavily</option></select></div>
-        <div><input type="password" id="sv-search-key" placeholder="tavily key (optional)"></div>
+        <div><input type="password" id="sv-search-key" placeholder="tavily key (optional)">
+          <label class="f" style="margin-top:4px"><input type="checkbox" id="sv-search-key-clear" style="width:auto"> remove stored key</label></div>
       </div>
       <label class="f">Text-to-speech</label>
       <div class="row">
@@ -190,14 +192,16 @@ legend{font-size:14px;font-weight:600;padding:0 8px;color:var(--acc2)}
       </div>
       <div class="row">
         <div><input type="text" id="sv-tts-base" placeholder="https://api.openai.com/v1"></div>
-        <div><input type="password" id="sv-tts-key" placeholder="TTS API key"></div>
+        <div><input type="password" id="sv-tts-key" placeholder="TTS key (optional — blank = no key)">
+          <label class="f" style="margin-top:4px"><input type="checkbox" id="sv-tts-key-clear" style="width:auto"> remove stored key (no auth)</label></div>
       </div>
       <div class="row">
         <div><label class="f">Voice — host A</label><input type="text" id="sv-tts-voiceA" placeholder="alloy"></div>
         <div><label class="f">Voice — host B</label><input type="text" id="sv-tts-voiceB" placeholder="nova"></div>
       </div>
       <div class="row">
-        <div><label class="f">ElevenLabs key</label><input type="password" id="sv-el-key" placeholder="sk_..."></div>
+        <div><label class="f">ElevenLabs key</label><input type="password" id="sv-el-key" placeholder="sk_...">
+          <label class="f" style="margin-top:4px"><input type="checkbox" id="sv-el-key-clear" style="width:auto"> remove stored key</label></div>
         <div><label class="f">ElevenLabs model</label><input type="text" id="sv-el-model" placeholder="eleven_multilingual_v2"></div>
       </div>
       <div class="row">
@@ -430,12 +434,12 @@ async function post(url,headers,body){
   if(!r.ok) throw new Error(url.split("/")[2]+" → HTTP "+r.status+": "+(await r.text()).slice(0,280));
   return r;
 }
+function authHeader(key){ return key && key.trim() ? {"Authorization":"Bearer "+key} : {}; }
 async function llm(messages,{json=false}={}){
-  if(!cfg.llm.key && !/localhost|127\.0\.0\.1/.test(cfg.llm.base)) throw new Error("No LLM API key set (Settings).");
   const body={ model:cfg.llm.model, messages, temperature:0.8 };
   if(json) body.response_format={type:"json_object"};
   const r=await post(cfg.llm.base.replace(/\/$/,"")+"/chat/completions",
-    {"Authorization":"Bearer "+cfg.llm.key},body);
+    authHeader(cfg.llm.key),body);
   return (await r.json()).choices[0].message.content||"";
 }
 function parseJSONLoose(txt){
@@ -562,7 +566,7 @@ async function ttsFetch(text,speaker){
   const p=cfg.tts.prov;
   if(p==="openai"){
     const r=await post(cfg.tts.base.replace(/\/$/,"")+"/audio/speech",
-      {"Authorization":"Bearer "+cfg.tts.key},
+      authHeader(cfg.tts.key),
       {model:cfg.tts.model,input:text,voice:(speaker==="B"?cfg.tts.voiceB:cfg.tts.voiceA)||"alloy",response_format:"mp3"});
     return await r.blob();
   }
@@ -614,7 +618,6 @@ async function buildAudio(){
   try{
     $("card-audio").classList.add("hidden"); audioBlob=null;
     if(cfg.tts.prov==="browser"){ await speakLive(segs); return; }
-    if(cfg.tts.prov==="openai" && !cfg.tts.key && !/localhost|127\.0\.0\.1/.test(cfg.tts.base)) throw new Error("No TTS API key set (Settings).");
     if(cfg.tts.prov==="elevenlabs" && !cfg.tts.elKey) throw new Error("No ElevenLabs key set (Settings).");
     const ctx=audioCtx(), bufs=[];
     prog(0,segs.length);
@@ -748,8 +751,6 @@ async function detectServer(){
   $("server-config").classList.remove("hidden");
   $("card-server-library").classList.toggle("hidden", !(srv.episodes && srv.episodes.count));
   refreshJobs(); loadDraft();
-  if(!srv.config.llm.keySet || !srv.config.tts.keySet)
-    toast("Server is missing an API key — open Settings → This server");
 }
 function jobRow(j){
   const d = document.createElement("div"); d.className = "libitem";
@@ -858,15 +859,22 @@ async function fillServerSettings(){
   if(!srv) return;
   try{ const c = await srvApi("/api/config");
     $("sv-llm-base").value = c.llm.base; $("sv-llm-model").value = c.llm.model;
-    $("sv-llm-key").placeholder = c.llm.keySet ? "stored ✓ (blank keeps it)" : "not set";
+    setKeyField("sv-llm-key", "sv-llm-key-clear", c.llm.keySet);
     $("sv-search-prov").value = c.search.prov;
-    $("sv-search-key").placeholder = c.search.keySet ? "stored ✓ (blank keeps it)" : "not set";
+    setKeyField("sv-search-key", "sv-search-key-clear", c.search.keySet);
     $("sv-tts-prov").value = c.tts.prov; $("sv-tts-model").value = c.tts.model; $("sv-tts-base").value = c.tts.base;
-    $("sv-tts-key").placeholder = c.tts.keySet ? "stored ✓ (blank keeps it)" : "not set";
+    setKeyField("sv-tts-key", "sv-tts-key-clear", c.tts.keySet);
     $("sv-tts-voiceA").value = c.tts.voiceA; $("sv-tts-voiceB").value = c.tts.voiceB;
-    $("sv-el-key").placeholder = c.tts.elKeySet ? "stored ✓ (blank keeps it)" : "not set";
+    setKeyField("sv-el-key", "sv-el-key-clear", c.tts.elKeySet);
     $("sv-el-model").value = c.tts.elModel; $("sv-el-voiceA").value = c.tts.elA; $("sv-el-voiceB").value = c.tts.elB;
   }catch(e){ toast("Server settings unavailable: "+e.message); }
+}
+function setKeyField(input, clear, isSet){
+  $(input).value = "";
+  $(clear).checked = !isSet;           // no stored key → default to "no auth"
+  $(input).disabled = $(clear).checked;
+  $(clear).onchange = () => { $(input).disabled = $(clear).checked; };
+  $(input).placeholder = isSet ? "stored ✓ (blank keeps it)" : "not set — tick for no auth";
 }
 $("btn-server-save").onclick = async () => {
   const body = {
@@ -876,10 +884,14 @@ $("btn-server-save").onclick = async () => {
           voiceA:$("sv-tts-voiceA").value.trim(), voiceB:$("sv-tts-voiceB").value.trim(),
           elModel:$("sv-el-model").value.trim(), elA:$("sv-el-voiceA").value.trim(), elB:$("sv-el-voiceB").value.trim() }
   };
-  const k = $("sv-llm-key").value.trim(); if(k) body.llm.key = k;
-  const sk = $("sv-search-key").value.trim(); if(sk) body.search.key = sk;
-  const tk = $("sv-tts-key").value.trim(); if(tk) body.tts.key = tk;
-  const ek = $("sv-el-key").value.trim(); if(ek) body.tts.elKey = ek;
+  const k = $("sv-llm-key").value.trim();
+  if(k) body.llm.key = k; else if($("sv-llm-key-clear").checked) body.llm.key = "";
+  const sk = $("sv-search-key").value.trim();
+  if(sk) body.search.key = sk; else if($("sv-search-key-clear").checked) body.search.key = "";
+  const tk = $("sv-tts-key").value.trim();
+  if(tk) body.tts.key = tk; else if($("sv-tts-key-clear").checked) body.tts.key = "";
+  const ek = $("sv-el-key").value.trim();
+  if(ek) body.tts.elKey = ek; else if($("sv-el-key-clear").checked) body.tts.elKey = "";
   try{
     await srvApi("/api/config", {method:"PUT", body:JSON.stringify(body)});
     $("server-note").textContent = "Saved on the server ✓";

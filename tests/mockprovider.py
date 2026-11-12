@@ -7,7 +7,8 @@ import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-CTRL = {"beats": 3, "segWords": 40, "delay": 0.0, "failLLM": False, "failTTS": False, "ttsFormat": "wav"}
+CTRL = {"beats": 3, "segWords": 40, "delay": 0.0, "failLLM": False, "failTTS": False, "ttsFormat": "wav",
+        "requireAuth": False}
 
 
 def wav(seconds=0.35, rate=24000):
@@ -30,8 +31,17 @@ class H(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")  # browsers call the mock directly in tests
         self.end_headers()
         self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
@@ -40,6 +50,8 @@ class H(BaseHTTPRequestHandler):
         if self.path == "/__control":
             CTRL.update(body)
             return self.out(200, {"ok": True, **CTRL})
+        if CTRL["requireAuth"] and not self.headers.get("Authorization"):
+            return self.out(401, {"error": {"message": "mock: missing Authorization header"}})
         if self.path.endswith("/chat/completions"):
             if CTRL["failLLM"]:
                 return self.out(500, {"error": "mock llm down"})
@@ -67,4 +79,5 @@ class H(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8099
-    ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
+    host = sys.argv[2] if len(sys.argv) > 2 else "127.0.0.1"
+    ThreadingHTTPServer((host, port), H).serve_forever()

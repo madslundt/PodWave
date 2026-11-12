@@ -64,6 +64,9 @@ Environment: `PODWAVE_DATA` (default `./data`), `PODWAVE_STATIC`, `PODWAVE_PORT`
   you configure.
 - **LLM**: any OpenAI-compatible `/chat/completions` (OpenAI, OpenRouter, Groq, a local
   llama.cpp/Ollama `/v1`).
+- **Keys are optional**: for local/self-hosted LLM and TTS that need no auth, leave the key
+  fields empty (tick *remove stored key* on the server panel). No `Authorization` header is
+  sent at all when no key is stored — required only for hosted providers and ElevenLabs.
 - **Search**: Tavily or none.
 - **TTS**: OpenAI-compatible `/audio/speech` (WAV output) or ElevenLabs (`output_format=wav`).
   Browser speech stays available for live playback only. If a provider returns MP3 and

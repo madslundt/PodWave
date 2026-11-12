@@ -223,9 +223,10 @@ def llm_call(cfg, messages, want_json=False):
     body = {"model": cfg["llm"]["model"], "messages": messages, "temperature": 0.8}
     if want_json:
         body["response_format"] = {"type": "json_object"}
+    auth = {"Authorization": "Bearer " + cfg["llm"]["key"]} if cfg["llm"]["key"].strip() else {}
     status, got = http_json(
         "POST", cfg["llm"]["base"].rstrip("/") + "/chat/completions",
-        {"Authorization": "Bearer " + cfg["llm"]["key"]}, body, timeout=180)
+        auth, body, timeout=180)
     try:
         return got["choices"][0]["message"]["content"] or ""
     except (KeyError, IndexError) as exc:
@@ -424,8 +425,7 @@ def run_job(job_id):
     style = str(brief.get("style") or "")[:400]
     words = int(minutes * WORDS_PER_MIN)
 
-    if not cfg["llm"]["key"] and not re.search(r"localhost|127\.0\.0\.1", cfg["llm"]["base"]):
-        raise RuntimeError("No LLM API key on the server (Settings -> Server, or data/config.json).")
+    # an empty LLM key is fine: local/self-hosted servers often need no auth at all
 
     # --- research
     sources, research = [], ""
@@ -521,9 +521,6 @@ Respond JSON: {{"segments":[{{"speaker":"A"|"B","text":"spoken words"}}]}}""",
         raise JobCancelled()
 
     # --- voices (per-segment audio is cached, so a restart resumes mid-episode)
-    if cfg["tts"]["prov"] == "openai" and not cfg["tts"]["key"] \
-            and not re.search(r"localhost|127\.0\.0\.1", cfg["tts"]["base"]):
-        raise RuntimeError("No TTS API key on the server (Settings -> Server, or data/config.json).")
     if cfg["tts"]["prov"] == "elevenlabs" and not cfg["tts"]["elKey"]:
         raise RuntimeError("No ElevenLabs key on the server (Settings -> Server, or data/config.json).")
     seg_dir = os.path.join(SEG_DIR, job_id)
@@ -574,8 +571,9 @@ def tts_fetch(cfg, text, speaker):
             {"text": text, "model_id": t["elModel"] or "eleven_multilingual_v2"},
             timeout=180, raw=True)
         return blob
+    auth = {"Authorization": "Bearer " + t["key"]} if t["key"].strip() else {}
     _, blob = http_json("POST", t["base"].rstrip("/") + "/audio/speech",
-        {"Authorization": "Bearer " + t["key"]},
+        auth,
         {"model": t["model"], "input": text,
          "voice": (t["voiceB"] if speaker == "B" else t["voiceA"]) or "alloy",
          "response_format": "wav"}, timeout=180, raw=True)

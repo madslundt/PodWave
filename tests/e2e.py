@@ -119,6 +119,7 @@ def main():
     start_server(tmp)
     try:
         scenario_basic(tmp)
+        scenario_no_key(tmp)
         scenario_cancel_queued()
         scenario_restart(tmp)
         scenario_errors(tmp)
@@ -213,6 +214,31 @@ def scenario_basic(tmp):
     check("episode deleted with file", code == 200 and req("GET", f"{BASE}/api/episodes/{ep_id}/audio", raw=True)[0] == 404 and gone)
     code, _, _ = req("DELETE", f"{BASE}/api/jobs/{jid}")
     check("job deleted", code == 200 and req("GET", f"{BASE}/api/jobs/{jid}")[0] == 404)
+
+
+def scenario_no_key(tmp):
+    print("\n== keyless local providers (no auth header at all) ==")
+    code, _, _ = req("PUT", BASE + "/api/config", {"llm": {"key": ""}, "tts": {"key": ""}})
+    on_disk = json.load(open(os.path.join(tmp, "config.json")))
+    check("empty key clears stored key", code == 200 and on_disk["llm"]["key"] == ""
+          and on_disk["tts"]["key"] == "")
+    code, h, _ = req("GET", BASE + "/api/health")
+    check("health says keyless", h["config"]["llm"]["keySet"] is False
+          and h["config"]["tts"]["keySet"] is False)
+    control(beats=2, delay=0.0, requireAuth=False)
+    code, j = submit(topics=["Local model run"], minutes=2)
+    jid = j["id"]
+    wait_for(lambda: job_state(jid)["state"] in ("done", "error"), 40)
+    d = job_state(jid)
+    check("keyless job done", d["state"] == "done", json.dumps(d.get("log", [])[-2:]))
+    # proof that no Authorization header is sent when no key is set
+    control(requireAuth=True)
+    code, j2 = submit(topics=["Should fail auth"], minutes=2)
+    jid2 = j2["id"]
+    wait_for(lambda: job_state(jid2)["state"] in ("done", "error"), 40)
+    check("auth-only provider rejected keyless", job_state(jid2)["state"] == "error",
+          job_state(jid2).get("state"))
+    control(requireAuth=False)
 
 
 def scenario_cancel_queued():
