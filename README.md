@@ -7,13 +7,20 @@ close the tab.
 ## What it does
 
 1. **Brief** — topics (one per line), genre (non-fiction / fiction), format (two hosts or
-   solo), target length in minutes, optional style notes.
+   solo), target length in minutes, optional style notes. Fiction adds story tone, characters,
+   setting and an optional surprise-twist flag; non-fiction adds an optional angle/focus — all
+   fed into the outline and beat prompts.
 2. **Research** — for non-fiction, Tavily (optional) collects sources; otherwise the model's
    own knowledge is used.
 3. **Script** — the model plans 4–10 beats, then writes each beat as spoken dialogue
    (~150 words/minute), returned as segments `{speaker, text}` and shown as an editable script.
-4. **Audio** — each line is voiced by the configured TTS, joined with short gaps, and stored
-   as a 24 kHz mono WAV you can play or download.
+   Fiction follows a story arc — cold-open hook, escalating conflict, midpoint turn, climax,
+   payoff — with every beat ending on a hook; non-fiction is told as a story with concrete
+   scenes and named sources.
+4. **Audio** — each line is voiced by the configured TTS (with delivery instructions derived
+   from the tone/style, for providers that support them), loudness-matched to one level, joined
+   with pacing-aware pauses (quick dialogue hand-offs ~0.08 s, beat breaks ~0.30 s) and 6 ms
+   edge fades so joins never click, and stored as a 24 kHz mono WAV you can play or download.
 
 Two ways to run a job:
 
@@ -68,9 +75,18 @@ Environment: `PODWAVE_DATA` (default `./data`), `PODWAVE_STATIC`, `PODWAVE_PORT`
   fields empty (tick *remove stored key* on the server panel). No `Authorization` header is
   sent at all when no key is stored — required only for hosted providers and ElevenLabs.
 - **Search**: Tavily or none.
+- **Test buttons** (Settings, both panels) call one provider once and report latency plus what came
+  back, so a wrong URL, key, or model name is found in a second instead of after a 10-minute episode.
+  They use the values in the fields as typed — nothing is saved, and a failed test changes nothing.
+  On the server panel a blank key field means "use the stored key". `curl -X POST localhost:8080/api/test
+  -d '{"target":"all"}'` does the same three checks from the command line.
 - **TTS**: OpenAI-compatible `/audio/speech` (WAV output) or ElevenLabs (`output_format=wav`).
-  Browser speech stays available for live playback only. If a provider returns MP3 and
-  `ffmpeg` is installed, the server converts it; otherwise it asks for WAV output.
+  Background jobs send a short `instructions` line (story tone + style notes) for expressive
+  delivery; providers that reject the field are detected on the first line and skipped for the
+  rest of the job. Browser speech stays available for live playback only — long lines are split
+  into sentence chunks with a keep-alive so browsers that stall long speech don't cut off.
+  If a provider returns MP3 and `ffmpeg` is installed, the server converts it; otherwise it
+  asks for WAV output.
 
 ## API
 
@@ -79,7 +95,8 @@ Environment: `PODWAVE_DATA` (default `./data`), `PODWAVE_STATIC`, `PODWAVE_PORT`
 | `GET /api/health` | version, masked config, queue and library counts |
 | `GET/PUT /api/config` | server config, keys masked (`keySet: true`) |
 | `GET/PUT /api/brief` | last brief, so a reload or another device restores it |
-| `POST /api/jobs` | `{topics[], genre, format, minutes, style}` → `202 {id}` |
+| `POST /api/test` | `{target: llm\|search\|tts\|all, llm?, search?, tts?}` → per-provider `ok`/`fail`/`unset` with detail; overrides are used in memory only |
+| `POST /api/jobs` | `{topics[], genre, format, minutes, style, tone?, characters?, setting?, twist?, angle?}` → `202 {id}` |
 | `GET /api/jobs` / `GET /api/jobs/{id}` | list / detail with stage, progress, log |
 | `POST /api/jobs/{id}/cancel` \| `/retry` | stop, or re-queue a failed job |
 | `DELETE /api/jobs/{id}` | forget the job (audio already stored is kept) |
@@ -105,16 +122,20 @@ an open server is an open cost meter and anyone on it can read the library.
 uv run tests/e2e.py            # or: python3 tests/e2e.py
 ```
 
-Starts the server with a mock OpenAI-compatible provider in a temp dir and checks 42
+Starts the server with a mock OpenAI-compatible provider in a temp dir and checks 73
 things: job lifecycle, cancel and retry, resume after `SIGKILL`, WAV validity and
-duration, `Range` requests, masked config, path traversal, error paths. Nothing real is
+duration, beat-aware pacing and loudness matching of the joined audio, the story-brief
+fields reaching the model, `instructions` sent and cleanly skipped when rejected,
+`Range` requests, masked config, path traversal, error paths, and every
+`/api/test` outcome — passing, model error, empty reply, refused connection, provider
+switched off, and a typed-in key that must never reach `config.json`. Nothing real is
 called. Passing on CPython 3.14.9 and 3.15.2.
 
 ## Notes and limits
 
 - Long episodes: WAV is ~2.9 MB/audio-minute; a client-side MP3 encoder would shrink that.
 - CORS: browsers block some providers from a browser origin (OpenAI and ElevenLabs are fine);
-  background jobs avoid the issue entirely.
-- Ideas: RSS feed, per-beat regeneration, voice preview before a full render, an MP3
-  encoder, PWA manifest for install-on-phone.
+  background jobs on the server avoid the issue entirely. A browser-side Test that says "the browser
+  could not reach it" is usually this, not a bad key — the same check on the server panel will pass.
+- Ideas: RSS feed, per-beat regeneration, an MP3 encoder, PWA manifest for install-on-phone.
 - The built-in "sample script" is **example data**, not fact-checked.

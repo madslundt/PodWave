@@ -8,7 +8,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CTRL = {"beats": 3, "segWords": 40, "delay": 0.0, "failLLM": False, "failTTS": False, "ttsFormat": "wav",
-        "requireAuth": False}
+        "requireAuth": False, "ttsForceMp3": False, "emptyReply": False, "rejectInstr": False}
+LAST = {}  # last request bodies seen, for tests that assert what the server actually sent
 
 
 def wav(seconds=0.35, rate=24000):
@@ -43,6 +44,11 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
+    def do_GET(self):
+        if self.path == "/__last":
+            return self.out(200, LAST)
+        self.out(404, {"error": "mock: " + self.path})
+
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(n) or b"{}")
@@ -53,6 +59,7 @@ class H(BaseHTTPRequestHandler):
         if CTRL["requireAuth"] and not self.headers.get("Authorization"):
             return self.out(401, {"error": {"message": "mock: missing Authorization header"}})
         if self.path.endswith("/chat/completions"):
+            LAST["chat"] = body
             if CTRL["failLLM"]:
                 return self.out(500, {"error": "mock llm down"})
             user = body["messages"][-1]["content"]
@@ -66,11 +73,18 @@ class H(BaseHTTPRequestHandler):
                 content = json.dumps({"segments": [
                     {"speaker": "A" if i % 2 == 0 else "B",
                      "text": "Spoken line for the test episode. " * 6} for i in range(nseg)]})
+            if CTRL.get("emptyReply"):
+                content = "   "
             return self.out(200, {"choices": [{"message": {"role": "assistant", "content": content}}]})
         if self.path.endswith("/audio/speech"):
+            LAST["speech"] = body
             if CTRL["failTTS"]:
                 return self.out(500, {"error": "mock tts down"})
+            if CTRL["rejectInstr"] and "instructions" in body:
+                return self.out(400, {"error": {"message": "unknown parameter: instructions"}})
             fmt = body.get("response_format", "wav")
+            if CTRL.get("ttsForceMp3"):
+                return self.out(200, b"\xff\xf3\x18\xc4" + b"\x00" * 512, "audio/mpeg")  # provider ignores the format
             if fmt == "wav":
                 return self.out(200, wav(CTRL.get("ttsSeconds", 0.35)), "audio/wav")
             return self.out(200, b"\xff\xf3\x18\xc4" + b"\x00" * 512, "audio/mpeg")  # fake mp3

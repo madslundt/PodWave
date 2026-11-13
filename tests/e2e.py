@@ -91,11 +91,12 @@ def write_config(data_dir):
                            "model": "mock-tts", "voiceA": "alloy", "voiceB": "nova"}}, fh)
 
 
-def submit(topics=None, minutes=4, genre="nonfiction", fmt="duo"):
-    code, body, _ = req("POST", BASE + "/api/jobs", {"topics": topics or ["Test topic"],
-                                                    "genre": genre, "format": fmt, "minutes": minutes,
-                                                    "style": "dry and technical"})
-    return code, body
+def submit(topics=None, minutes=4, genre="nonfiction", fmt="duo", extra=None):
+    body = {"topics": topics or ["Test topic"], "genre": genre, "format": fmt, "minutes": minutes,
+            "style": "dry and technical"}
+    body.update(extra or {})
+    code, got, _ = req("POST", BASE + "/api/jobs", body)
+    return code, got
 
 
 def job_state(jid):
@@ -119,10 +120,12 @@ def main():
     start_server(tmp)
     try:
         scenario_basic(tmp)
+        scenario_story_fields(tmp)
         scenario_no_key(tmp)
         scenario_cancel_queued()
         scenario_restart(tmp)
         scenario_errors(tmp)
+        scenario_connection_tests(tmp)
         scenario_static_and_auth()
     finally:
         for p in PROCS + [mock]:
@@ -216,6 +219,43 @@ def scenario_basic(tmp):
     check("job deleted", code == 200 and req("GET", f"{BASE}/api/jobs/{jid}")[0] == 404)
 
 
+def scenario_story_fields(tmp):
+    print("\n== story brief, pacing, voice direction ==")
+    control(beats=3, delay=0.0, rejectInstr=False)
+    code, j = submit(genre="fiction", fmt="duo", minutes=3, extra={
+        "tone": "Thriller / mystery", "characters": "Mara, a salvage pilot",
+        "setting": "a derelict shipyard station", "twist": True})
+    jid = j["id"]
+    wait_for(lambda: job_state(jid)["state"] in ("done", "error"), 40)
+    d = job_state(jid)
+    check("fiction fields stored in brief", d["state"] == "done" and d["brief"].get("twist") is True
+          and d["brief"].get("tone") == "Thriller / mystery", json.dumps(d.get("brief"))[:160])
+    last = req("GET", MOCK + "/__last")[1]
+    last_user = (last.get("chat") or {}).get("messages", [{}])[-1].get("content", "")
+    check("story brief reaches the model", "Story brief" in last_user and "salvage pilot" in last_user,
+          last_user[:120])
+    check("voice direction sent to TTS", "mood" in (last.get("speech") or {}).get("instructions", ""),
+          json.dumps(last.get("speech"))[:160])
+    ep = [e for e in req("GET", BASE + "/api/episodes")[1]["episodes"] if e["id"] == d["episode_id"]][0]
+    # 6 lines x 0.35 s + gaps: three quick hand-offs (0.08) + two beat breaks (0.30)
+    check("beat-aware pacing in the joined audio",
+          abs(ep["seconds"] - (6 * 0.35 + 3 * 0.08 + 2 * 0.30)) < 0.05, f"{ep['seconds']}s")
+    with wave.open(os.path.join(tmp, "audio", str(ep["id"]) + ".wav"), "rb") as w:
+        data = w.readframes(w.getnframes())
+    peak = max(abs(int.from_bytes(data[i:i + 2], "little", signed=True)) for i in range(0, len(data), 2))
+    check("lines loudness-matched near target", 20000 <= peak <= 32767, f"peak={peak}")
+
+    # a provider that rejects the 'instructions' field must still finish, voicing without it
+    control(rejectInstr=True)
+    jid2 = submit(genre="fiction", minutes=2)[1]["id"]
+    wait_for(lambda: job_state(jid2)["state"] in ("done", "error"), 40)
+    check("instructions rejected -> job still finishes", job_state(jid2)["state"] == "done",
+          job_state(jid2).get("error", ""))
+    check("fallback voice call omits instructions",
+          "instructions" not in (req("GET", MOCK + "/__last")[1].get("speech") or {}))
+    control(rejectInstr=False)
+
+
 def scenario_no_key(tmp):
     print("\n== keyless local providers (no auth header at all) ==")
     code, _, _ = req("PUT", BASE + "/api/config", {"llm": {"key": ""}, "tts": {"key": ""}})
@@ -293,6 +333,85 @@ def scenario_errors(tmp):
     check("bad request rejected", req("POST", BASE + "/api/jobs", {"topics": []})[0] == 400)
     check("unknown job 404", req("GET", BASE + "/api/jobs/nope")[0] == 404)
     check("unknown episode 404", req("GET", BASE + "/api/episodes/1/audio", raw=True)[0] == 404)
+
+
+def api_test(target, **over):
+    """POST /api/test -> (status, body, per-provider rows)."""
+    code, body, _ = req("POST", BASE + "/api/test", dict({"target": target}, **over))
+    if not isinstance(body, dict):      # never happens for this endpoint; keeps the types honest
+        return code, {}, {}
+    return code, body, body.get("results", {})
+
+
+def scenario_connection_tests(tmp):
+    print("\n== settings test endpoint ==")
+    control(failLLM=False, failTTS=False, requireAuth=False, beats=2, emptyReply=False, ttsForceMp3=False)
+    cfg_path = os.path.join(tmp, "config.json")
+    before = json.load(open(cfg_path))
+
+    code, body, res = api_test("llm")
+    check("test llm passes on a working model",
+          code == 200 and body.get("ok") and res.get("llm", {}).get("state") == "ok", json.dumps(res)[:180])
+    code, body, res = api_test("tts")
+    tts = res.get("tts", {})
+    check("test tts passes and measures the audio", code == 200 and tts.get("state") == "ok"
+          and "s WAV" in tts.get("detail", "") and tts.get("ms", -1) >= 0, json.dumps(tts)[:180])
+    code, body, res = api_test("search")
+    check("test search reports 'off' rather than failing",
+          code == 200 and res.get("search", {}).get("state") == "unset" and body.get("ok") is True,
+          json.dumps(res)[:180])
+    code, body, res = api_test("all")
+    check("test all covers every provider", code == 200 and set(res) == {"llm", "search", "tts"}, json.dumps(res)[:180])
+
+    control(emptyReply=True)
+    code, body, res = api_test("llm")
+    check("an empty model reply is a failure", res.get("llm", {}).get("state") == "fail"
+          and "empty" in res.get("llm", {}).get("detail", ""), json.dumps(res)[:180])
+    control(emptyReply=False, failLLM=True)
+    code, body, res = api_test("llm")
+    check("a model error is reported with the HTTP code", res.get("llm", {}).get("state") == "fail"
+          and "HTTP 500" in res.get("llm", {}).get("detail", ""), json.dumps(res)[:180])
+    control(failLLM=False)
+    code, body, res = api_test("all")
+    check("an all-good run reports ok", code == 200 and body.get("ok") is True, json.dumps(res)[:180])
+
+    code, body, res = api_test("tts", tts={"prov": "elevenlabs"})
+    check("elevenlabs without a key fails with a fix", res.get("tts", {}).get("state") == "fail"
+          and "ElevenLabs key" in res.get("tts", {}).get("detail", ""), json.dumps(res)[:180])
+    code, body, res = api_test("llm", llm={"base": "ftp://example.invalid"})
+    check("a bad base URL fails without a crash", code == 200 and res.get("llm", {}).get("state") == "fail"
+          and "http(s)" in res.get("llm", {}).get("detail", ""), json.dumps(res)[:180])
+
+    control(ttsForceMp3=True)
+    code, body, res = api_test("tts")
+    check("audio the server cannot splice is reported", res.get("tts", {}).get("state") == "fail",
+          json.dumps(res.get("tts", {}))[:180])
+    control(ttsForceMp3=False)
+
+    # values typed into Settings are used for the check but never persisted
+    control(requireAuth=True)
+    code, echo, res = api_test("llm", llm={"key": "one-shot-key"})
+    check("a typed-in key is used for the test", res.get("llm", {}).get("state") == "ok", json.dumps(res)[:180])
+    code, body, res = api_test("llm")
+    check("a keyless config fails an auth-only provider", res.get("llm", {}).get("state") == "fail",
+          json.dumps(res)[:180])
+    control(requireAuth=False)
+    check("a test never writes config.json", json.load(open(cfg_path)) == before)
+    check("a test never echoes a key back", "one-shot-key" not in json.dumps(echo))
+    control(failLLM=True)
+    code, body, res = api_test("all")
+    check("one failing provider reddens the whole run", code == 200 and body.get("ok") is False
+          and res.get("tts", {}).get("state") == "ok", json.dumps(res)[:180])
+    control(failLLM=False)
+
+    code, body, res = api_test("llm", llm={"base": "http://127.0.0.1:1/v1"})
+    check("a refused connection is reported plainly", res.get("llm", {}).get("state") == "fail"
+          and "Connection refused" in res.get("llm", {}).get("detail", ""), json.dumps(res)[:180])
+    check("unknown target 400", req("POST", BASE + "/api/test", {"target": "nope"})[0] == 400)
+    check("unknown provider 400", req("POST", BASE + "/api/test",
+          {"target": "search", "search": {"prov": "bogus"}})[0] == 400)
+    check("the test endpoint is POST only", req("GET", BASE + "/api/test")[0] == 405)
+    check("tests leave the server healthy", req("GET", BASE + "/api/health")[1]["ok"] is True)
 
 
 def scenario_static_and_auth():
