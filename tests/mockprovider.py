@@ -8,7 +8,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CTRL = {"beats": 3, "segWords": 40, "delay": 0.0, "failLLM": False, "failTTS": False, "ttsFormat": "wav",
-        "requireAuth": False, "ttsForceMp3": False, "emptyReply": False, "rejectInstr": False}
+        "requireAuth": False, "ttsForceMp3": False, "emptyReply": False, "rejectInstr": False,
+        "chatReply": "", "chatUpdates": {}, "chatDone": False}
 LAST = {}  # last request bodies seen, for tests that assert what the server actually sent
 
 
@@ -62,17 +63,23 @@ class H(BaseHTTPRequestHandler):
             LAST["chat"] = body
             if CTRL["failLLM"]:
                 return self.out(500, {"error": "mock llm down"})
-            user = body["messages"][-1]["content"]
-            if '"beats"' in user:
-                beats = [{"name": f"Beat {i+1}", "words": CTRL["segWords"] * 2,
-                          "gist": f"Coverage point {i+1} of the episode."} for i in range(CTRL["beats"])]
-                content = json.dumps({"title": "Mock Episode", "description": "A test episode.",
-                                      "beats": beats})
+            first = str(body["messages"][0]["content"]) if body["messages"] else ""
+            if "story-setup" in first:  # brief setup chat turn
+                content = json.dumps({"reply": CTRL["chatReply"] or "Nice — what tone should the story have?",
+                                      "updates": CTRL["chatUpdates"] or {},
+                                      "done": bool(CTRL["chatDone"])})
             else:
-                nseg = 2
-                content = json.dumps({"segments": [
-                    {"speaker": "A" if i % 2 == 0 else "B",
-                     "text": "Spoken line for the test episode. " * 6} for i in range(nseg)]})
+                user = body["messages"][-1]["content"]
+                if '"beats"' in user:
+                    beats = [{"name": f"Beat {i+1}", "words": CTRL["segWords"] * 2,
+                              "gist": f"Coverage point {i+1} of the episode."} for i in range(CTRL["beats"])]
+                    content = json.dumps({"title": "Mock Episode", "description": "A test episode.",
+                                          "beats": beats})
+                else:
+                    nseg = 2
+                    content = json.dumps({"segments": [
+                        {"speaker": "A" if i % 2 == 0 else "B",
+                         "text": "Spoken line for the test episode. " * 6} for i in range(nseg)]})
             if CTRL.get("emptyReply"):
                 content = "   "
             return self.out(200, {"choices": [{"message": {"role": "assistant", "content": content}}]})

@@ -9,8 +9,7 @@ services:
       # PODWAVE_LLM_KEY: sk-...
       # PODWAVE_TTS_KEY: sk-...
       # PODWAVE_SEARCH_KEY: tvly-...
-      # Require a token on /api/* if you expose the port beyond localhost:
-      # PODWAVE_TOKEN: something-long-and-random
+      # No login or token: whoever can reach port 8080 can use the server and its library.
       PODWAVE_BIND: 0.0.0.0
     volumes:
       - ./data:/data

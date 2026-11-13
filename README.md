@@ -7,9 +7,14 @@ close the tab.
 ## What it does
 
 1. **Brief** — topics (one per line), genre (non-fiction / fiction), format (two hosts or
-   solo), target length in minutes, optional style notes. Fiction adds story tone, characters,
-   setting and an optional surprise-twist flag; non-fiction adds an optional angle/focus — all
-   fed into the outline and beat prompts.
+   solo), target length in minutes, the language to write and speak the episode in
+   (default: the language of your topics) and optional style notes. Fiction adds story tone,
+   characters, setting and an optional surprise-twist flag; non-fiction adds an optional
+   angle/focus — all fed into the outline and beat prompts. With a server, a **setup chat**
+   sits under the brief: describe the episode in your own words and the model fills the
+   fields live while you talk, asking only about the few details that would most improve
+   the episode. You can stop, edit anything, or generate at any time — the chat never
+   blocks the brief.
 2. **Research** — for non-fiction, Tavily (optional) collects sources; otherwise the model's
    own knowledge is used.
 3. **Script** — the model plans 4–10 beats, then writes each beat as spoken dialogue
@@ -31,8 +36,14 @@ Two ways to run a job:
 | Keys live in | browser `localStorage` | server `data/config.json` |
 | Stored audio | browser IndexedDB | server `data/` + Library |
 
-Queue it, close the laptop, come back to **Library** and press play. Interrupted jobs
-re-queue after a restart, and voiced segments are reused, so a crash does not start over.
+Queue it, close the laptop, come back to **Library** and press play. A queued story appears
+under **Being created** (with progress, cancel and retry) and moves to **Created** when done —
+the Create page resets to a blank brief the moment you queue. Interrupted jobs re-queue after
+a restart, and voiced segments are reused, so a crash does not start over.
+
+The page you are on is kept in the URL (`#/create`, `#/library`, `#/settings`), so a refresh
+lands on the same page. Tab switches keep your half-written brief; a reload clears the input
+fields (the browser warns before you leave a page with something typed).
 
 ## Run it
 
@@ -57,8 +68,8 @@ The image is `ghcr.io/astral-sh/uv:python3.15-trixie-slim` (uv + CPython 3.15), 
 `.python-version`; `pyproject.toml` asks for `>= 3.14` and the suite passes on 3.14 and 3.15.
 
 Environment: `PODWAVE_DATA` (default `./data`), `PODWAVE_STATIC`, `PODWAVE_PORT` (8080),
-`PODWAVE_BIND` (`127.0.0.1`; set `0.0.0.0` to expose), `PODWAVE_TOKEN` (if set, every
-`/api/*` call needs `Authorization: Bearer <token>`). Keys can also be seeded with
+`PODWAVE_BIND` (`127.0.0.1`; set `0.0.0.0` to expose). There is no login and no access
+token — every `/api/*` endpoint is public. Keys can also be seeded with
 `PODWAVE_LLM_KEY`, `PODWAVE_TTS_KEY`, `PODWAVE_SEARCH_KEY`, `PODWAVE_LLM_MODEL`,
 `PODWAVE_LLM_BASE`, `PODWAVE_TTS_BASE`, `PODWAVE_TTS_MODEL`.
 
@@ -94,9 +105,10 @@ Environment: `PODWAVE_DATA` (default `./data`), `PODWAVE_STATIC`, `PODWAVE_PORT`
 |---|---|
 | `GET /api/health` | version, masked config, queue and library counts |
 | `GET/PUT /api/config` | server config, keys masked (`keySet: true`) |
-| `GET/PUT /api/brief` | last brief, so a reload or another device restores it |
+| `GET/PUT /api/brief` | last brief stored on the server (the page keeps the draft locally and never restores it into the form) |
+| `POST /api/brief/chat` | `{messages:[{role,content}], brief}` → `{reply, updates, done}` — one setup-chat turn; `updates` are validated against the real brief fields, `done` means the model considers the brief ready (and always obeys a stop) |
 | `POST /api/test` | `{target: llm\|search\|tts\|all, llm?, search?, tts?}` → per-provider `ok`/`fail`/`unset` with detail; overrides are used in memory only |
-| `POST /api/jobs` | `{topics[], genre, format, minutes, style, tone?, characters?, setting?, twist?, angle?}` → `202 {id}` |
+| `POST /api/jobs` | `{topics[], genre, format, minutes, style, language?, tone?, characters?, setting?, twist?, angle?}` → `202 {id}` |
 | `GET /api/jobs` / `GET /api/jobs/{id}` | list / detail with stage, progress, log |
 | `POST /api/jobs/{id}/cancel` \| `/retry` | stop, or re-queue a failed job |
 | `DELETE /api/jobs/{id}` | forget the job (audio already stored is kept) |
@@ -113,8 +125,10 @@ job notices the request. Stages: `research`, `outline`, `writing`, `voicing`, `e
 Browser keys never leave the browser except in direct calls to the providers you set.
 Server keys stay in `data/config.json` (0600) and are never returned by the API. The page
 loads no third-party scripts. Research text is labelled untrusted in the prompt, so a page
-cannot steer the writer. If you expose the port, set `PODWAVE_TOKEN` or put it behind auth:
-an open server is an open cost meter and anyone on it can read the library.
+cannot steer the writer. The server is public on purpose — no login, no token: anyone who
+can reach the address can run jobs, spend the configured provider's budget, and listen to
+the library. Keep it on a private network or behind a reverse proxy you control if that
+matters to you.
 
 ## Tests
 
@@ -122,10 +136,12 @@ an open server is an open cost meter and anyone on it can read the library.
 uv run tests/e2e.py            # or: python3 tests/e2e.py
 ```
 
-Starts the server with a mock OpenAI-compatible provider in a temp dir and checks 73
+Starts the server with a mock OpenAI-compatible provider in a temp dir and checks 90
 things: job lifecycle, cancel and retry, resume after `SIGKILL`, WAV validity and
 duration, beat-aware pacing and loudness matching of the joined audio, the story-brief
-fields reaching the model, `instructions` sent and cleanly skipped when rejected,
+and language fields reaching the model and the voice instructions, setup-chat turns
+(brief + history sent, suggested updates clamped to real fields, the stop path, model
+errors), `instructions` sent and cleanly skipped when rejected,
 `Range` requests, masked config, path traversal, error paths, and every
 `/api/test` outcome — passing, model error, empty reply, refused connection, provider
 switched off, and a typed-in key that must never reach `config.json`. Nothing real is
