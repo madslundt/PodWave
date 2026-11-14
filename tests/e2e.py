@@ -64,7 +64,6 @@ def wait_for(fn, timeout=30, step=0.2):
 def start_server(data_dir, port=SERVER_PORT):
     env = dict(os.environ, PODWAVE_DATA=data_dir, PODWAVE_PORT=str(port), PODWAVE_BIND="127.0.0.1",
                PODWAVE_STATIC=os.path.join(ROOT, "public"))
-    env.pop("PODWAVE_TOKEN", None)
     p = subprocess.Popen([PY, os.path.join(ROOT, "server", "podwave.py")], env=env,
                          stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     end = time.time() + 15
