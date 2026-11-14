@@ -7,14 +7,19 @@ close the tab.
 ## What it does
 
 1. **Brief** — topics (one per line), genre (non-fiction / fiction), format (two hosts or
-   solo), target length in minutes, the language to write and speak the episode in
-   (default: the language of your topics) and optional style notes. Fiction adds story tone,
+   solo), the hosts' names, target length in minutes, the language to write and speak the
+   episode in (default: the language of your topics) and optional style notes.
+   **Names**: leave them blank and each story gets random ones when it is created (drawn from
+   a pool that matches the episode language, and 🎲 redraws them), so nobody is ever called
+   "Host A" — in the script, the model prompts or the error messages. Names are stored with
+   the job, so a retry or restart keeps the same two people. The letters `A`/`B` survive only
+   as internal speaker slots that map to the two voices in Settings. Fiction adds story tone,
    characters, setting and an optional surprise-twist flag; non-fiction adds an optional
    angle/focus — all fed into the outline and beat prompts. With a server, a **setup chat**
-   sits under the brief: describe the episode in your own words and the model fills the
-   fields live while you talk, asking only about the few details that would most improve
-   the episode. You can stop, edit anything, or generate at any time — the chat never
-   blocks the brief.
+   floats in the corner (a Messenger-style bubble panel): describe the episode in your own
+   words and the model fills the fields live while you talk, asking only about the few
+   details that would most improve the episode. You can stop, edit anything, or generate at
+   any time — the chat never blocks the brief.
 2. **Research** — for non-fiction, Tavily (optional) collects sources; otherwise the model's
    own knowledge is used.
 3. **Script** — the model plans 4–10 beats, then writes each beat as spoken dialogue
@@ -108,7 +113,7 @@ token — every `/api/*` endpoint is public. Keys can also be seeded with
 | `GET/PUT /api/brief` | last brief stored on the server (the page keeps the draft locally and never restores it into the form) |
 | `POST /api/brief/chat` | `{messages:[{role,content}], brief}` → `{reply, updates, done}` — one setup-chat turn; `updates` are validated against the real brief fields, `done` means the model considers the brief ready (and always obeys a stop) |
 | `POST /api/test` | `{target: llm\|search\|tts\|all, llm?, search?, tts?}` → per-provider `ok`/`fail`/`unset` with detail; overrides are used in memory only |
-| `POST /api/jobs` | `{topics[], genre, format, minutes, style, language?, tone?, characters?, setting?, twist?, angle?}` → `202 {id}` |
+| `POST /api/jobs` | `{topics[], genre, format, minutes, style, language?, hosts?, tone?, characters?, setting?, twist?, angle?}` → `202 {id}` (`hosts` = display names per speaker slot, blanks filled at random) |
 | `GET /api/jobs` / `GET /api/jobs/{id}` | list / detail with stage, progress, log |
 | `POST /api/jobs/{id}/cancel` \| `/retry` | stop, or re-queue a failed job |
 | `DELETE /api/jobs/{id}` | forget the job (audio already stored is kept) |
@@ -136,10 +141,12 @@ matters to you.
 uv run tests/e2e.py            # or: python3 tests/e2e.py
 ```
 
-Starts the server with a mock OpenAI-compatible provider in a temp dir and checks 90
+Starts the server with a mock OpenAI-compatible provider in a temp dir and checks 101
 things: job lifecycle, cancel and retry, resume after `SIGKILL`, WAV validity and
 duration, beat-aware pacing and loudness matching of the joined audio, the story-brief
-and language fields reaching the model and the voice instructions, setup-chat turns
+and language fields reaching the model and the voice instructions, host names (typed ones
+kept verbatim, blanks filled at random in their own slot, names reaching the prompts and
+the stored script, and the same names after a retry), setup-chat turns
 (brief + history sent, suggested updates clamped to real fields, the stop path, model
 errors), `instructions` sent and cleanly skipped when rejected,
 `Range` requests, masked config, path traversal, error paths, and every

@@ -9,7 +9,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CTRL = {"beats": 3, "segWords": 40, "delay": 0.0, "failLLM": False, "failTTS": False, "ttsFormat": "wav",
         "requireAuth": False, "ttsForceMp3": False, "emptyReply": False, "rejectInstr": False,
-        "chatReply": "", "chatUpdates": {}, "chatDone": False}
+        "chatReply": "", "chatUpdates": {}, "chatDone": False,
+        "models": ["mock-llm", "mock-llm-2", "mock-llm-fast", "mock-tts", "mock-tts-2"]}
 LAST = {}  # last request bodies seen, for tests that assert what the server actually sent
 
 
@@ -48,6 +49,11 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/__last":
             return self.out(200, LAST)
+        if self.path.endswith("/models"):  # the model list a Settings dropdown would fetch
+            if CTRL["requireAuth"] and not self.headers.get("Authorization"):
+                return self.out(401, {"error": {"message": "mock: missing Authorization header"}})
+            return self.out(200, {"object": "list",
+                                  "data": [{"id": m, "object": "model"} for m in CTRL["models"]]})
         self.out(404, {"error": "mock: " + self.path})
 
     def do_POST(self):

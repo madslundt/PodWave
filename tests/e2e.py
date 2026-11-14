@@ -118,6 +118,7 @@ def main():
     try:
         scenario_basic(tmp)
         scenario_story_fields(tmp)
+        scenario_hosts(tmp)
         scenario_chat(tmp)
         scenario_no_key(tmp)
         scenario_cancel_queued()
@@ -147,15 +148,18 @@ def scenario_basic(tmp):
     check("static index served", r.status == 200 and "PodWave" in page)
     code, h, _ = req("GET", BASE + "/api/health")
     check("health ok", code == 200 and h.get("ok") and h["version"])
-    check("health hides keys", "test-llm" not in json.dumps(h) and h["config"]["llm"]["keySet"] is True)
+    check("health hides keys", "test-llm" not in json.dumps(h) and h["config"]["llms"][0]["keySet"] is True)
     code, c, _ = req("GET", BASE + "/api/config")
     flat = json.dumps(c)
     check("config masked", code == 200 and "test-llm" not in flat and "test-tts" not in flat
           and not any(k == "key" for section in c.values() for k in section), flat[:120])
-    code, _, _ = req("PUT", BASE + "/api/config", {"llm": {"model": "mock-llm-2"}})
+    code, current, _ = req("GET", BASE + "/api/config")
+    current["llms"][0]["model"] = "mock-llm-2"
+    current["llms"].append({"id":"second","name":"Second","base":MOCK+"/v1","model":"mock-llm-fast"})
+    code, _, _ = req("PUT", BASE + "/api/config", current)
     on_disk = json.load(open(os.path.join(tmp, "config.json")))
-    check("config put keeps keys", code == 200 and on_disk["llm"]["key"] == "test-llm"
-          and on_disk["llm"]["model"] == "mock-llm-2")
+    check("config put keeps keys and multiple models", code == 200 and on_disk["llms"][0]["key"] == "test-llm"
+          and on_disk["llms"][0]["model"] == "mock-llm-2" and len(on_disk["llms"]) == 2)
     mode = oct(os.stat(os.path.join(tmp, "config.json")).st_mode & 0o777)
     check("config file is 0600", mode == "0o600", mode)
     control(beats=3, delay=0.0)
@@ -260,6 +264,60 @@ def scenario_story_fields(tmp):
     control(rejectInstr=False)
 
 
+def scenario_hosts(tmp):
+    """Hosts get real names: typed ones are used verbatim, blanks get random ones, and nobody
+    is ever called "A" or "B" in what the model sees or what the app shows."""
+    print("\n== host names ==")
+    control(beats=2, delay=0.0)
+    jid = submit(topics=["Naming the hosts"], minutes=2,
+                 extra={"hosts": ["Mads", "Freja"], "language": "Dansk"})[1]["id"]
+    wait_for(lambda: job_state(jid)["state"] in ("done", "error"), 40)
+    d = job_state(jid)
+    check("typed names stored in brief", d["state"] == "done" and d["brief"].get("hosts") == ["Mads", "Freja"],
+          json.dumps(d.get("brief"))[:180])
+    prompt = (req("GET", MOCK + "/__last")[1].get("chat") or {}).get("messages", [{}])[-1].get("content", "")
+    check("names reach the model", "Mads" in prompt and "Freja" in prompt, prompt[:120])
+    check("model is not told 'Host A'", 'speaker "A" (lead' not in prompt, prompt[:120])
+    script = req("GET", f"{BASE}/api/episodes/{d['episode_id']}/script")[1]
+    check("episode script carries names", script.get("hosts") == ["Mads", "Freja"], json.dumps(script)[:150])
+    req("POST", f"{BASE}/api/jobs/{jid}/retry")
+    wait_for(lambda: job_state(jid)["state"] in ("done", "error"), 40)
+    check("retry keeps the same names", job_state(jid)["brief"].get("hosts") == ["Mads", "Freja"],
+          json.dumps(job_state(jid).get("brief", {}))[:180])
+
+    jid2 = submit(topics=["Random names"], minutes=2)[1]["id"]
+    wait_for(lambda: job_state(jid2)["state"] in ("done", "error"), 40)
+    names = job_state(jid2)["brief"].get("hosts") or []
+    check("blank names get two random names", len(names) == 2 and all(names) and names[0] != names[1],
+          json.dumps(names))
+    check("random names reach the model",
+          all(n in (req("GET", MOCK + "/__last")[1].get("chat") or {}).get("messages", [{}])[-1]
+              .get("content", "") for n in names))
+
+    jid3 = submit(fmt="solo", minutes=2, topics=["Solo naming"])[1]["id"]
+    wait_for(lambda: job_state(jid3)["state"] in ("done", "error"), 40)
+    solo = job_state(jid3)["brief"].get("hosts") or []
+    check("solo gets one name", len(solo) == 1 and bool(solo[0]), json.dumps(solo))
+
+    jid4 = submit(topics=["Half named"], minutes=2, extra={"hosts": ["Mads", ""]})[1]["id"]
+    wait_for(lambda: job_state(jid4)["state"] in ("done", "error"), 40)
+    half = job_state(jid4)["brief"].get("hosts") or []
+    check("blank slot is filled in place", half[0] == "Mads" and len(half) == 2 and bool(half[1]),
+          json.dumps(half))
+
+    code, r, _ = req("POST", BASE + "/api/brief/chat",
+                     {"messages": [{"role": "user", "content": "Call them Freja and Mikkel"}],
+                      "brief": {"topics": ["x"], "genre": "nonfiction", "format": "duo", "minutes": 5}})
+    check("chat names are kept", code == 200, json.dumps(r)[:150])
+    control(failLLM=False, chatReply="Noted.", chatUpdates={"hosts": ["Freja", "Mikkel"]}, chatDone=True)
+    code, r, _ = req("POST", BASE + "/api/brief/chat",
+                     {"messages": [{"role": "user", "content": "Call them Freja and Mikkel"}],
+                      "brief": {"topics": ["x"], "genre": "nonfiction", "format": "duo", "minutes": 5}})
+    check("chat name update survives cleanup", r.get("updates") == {"hosts": ["Freja", "Mikkel"]},
+          json.dumps(r)[:180])
+    control(chatUpdates={})
+
+
 def scenario_chat(tmp):
     print("\n== story-setup chat ==")
     control(failLLM=False, chatReply="What should the main character be after?",
@@ -306,13 +364,16 @@ def scenario_chat(tmp):
 
 def scenario_no_key(tmp):
     print("\n== keyless local providers (no auth header at all) ==")
-    code, _, _ = req("PUT", BASE + "/api/config", {"llm": {"key": ""}, "tts": {"key": ""}})
+    code, config, _ = req("GET", BASE + "/api/config")
+    config["llms"][0]["key"] = ""
+    config["ttss"][0]["key"] = ""
+    code, _, _ = req("PUT", BASE + "/api/config", config)
     on_disk = json.load(open(os.path.join(tmp, "config.json")))
-    check("empty key clears stored key", code == 200 and on_disk["llm"]["key"] == ""
-          and on_disk["tts"]["key"] == "")
+    check("empty key clears stored key", code == 200 and on_disk["llms"][0]["key"] == ""
+          and on_disk["ttss"][0]["key"] == "")
     code, h, _ = req("GET", BASE + "/api/health")
-    check("health says keyless", h["config"]["llm"]["keySet"] is False
-          and h["config"]["tts"]["keySet"] is False)
+    check("health says keyless", h["config"]["llms"][0]["keySet"] is False
+          and h["config"]["ttss"][0]["keySet"] is False)
     control(beats=2, delay=0.0, requireAuth=False)
     code, j = submit(topics=["Local model run"], minutes=2)
     jid = j["id"]
@@ -438,9 +499,10 @@ def scenario_connection_tests(tmp):
 
     # values typed into Settings are used for the check but never persisted
     control(requireAuth=True)
-    code, echo, res = api_test("llm", llm={"key": "one-shot-key"})
+    profile_id = req("GET", BASE + "/api/config")[1]["defaultLlm"]
+    code, echo, res = api_test("llm", llm={"id": profile_id, "key": "one-shot-key"})
     check("a typed-in key is used for the test", res.get("llm", {}).get("state") == "ok", json.dumps(res)[:180])
-    code, body, res = api_test("llm")
+    code, body, res = api_test("llm", llm={"id": profile_id})
     check("a keyless config fails an auth-only provider", res.get("llm", {}).get("state") == "fail",
           json.dumps(res)[:180])
     control(requireAuth=False)
