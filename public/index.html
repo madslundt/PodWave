@@ -95,6 +95,11 @@ legend{font-size:14px;font-weight:600;padding:0 8px;color:var(--acc2)}
 .testout.err{color:var(--err)}
 .testout.warn{color:#e3c46b}
 .prow{border:1px solid var(--line);border-radius:10px;padding:2px 12px 10px;margin:10px 0;background:rgba(29,36,52,.5)}
+.spd{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.spd button{background:var(--panel2);border:1px solid var(--line);color:var(--dim);
+  border-radius:14px;padding:5px 10px;font-size:12.5px;cursor:pointer}
+.spd button:hover{border-color:var(--acc2);color:var(--text)}
+.spd button.on{background:rgba(122,92,255,.2);border-color:var(--acc);color:var(--text)}
 .prow .pfoot{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px}
 .prow .pfoot .testout{flex:1;min-width:140px}
 .pfoot label.ck{display:flex;align-items:center;gap:6px;margin:0;font-size:12.5px;color:var(--dim)}
@@ -539,6 +544,27 @@ function profileEditor(host, scope, kind){
       if("speechSynthesis" in window) speechSynthesis.addEventListener("voiceschanged", load);
       return s;
     };
+    // speech speed: fine presets (dense around 1×, since 1.0 is a touch fast and
+    // 0.75 a touch slow) plus the number box for anything in between
+    const SPD_PRESETS = [0.5, 0.75, 0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.25, 1.5];
+    const speedField = (fname, lo, hi, label) => {
+      const inp = el("input", null, { type:"number", min:String(lo), max:String(hi),
+                                      step:"0.05", value:String(row.cur[fname] || 1) });
+      bind(inp, fname);
+      const chips = el("div","spd");
+      const mark = () => { const v = parseFloat(inp.value) || 1;
+        for(const b of chips.children) b.className = Math.abs(Number(b.dataset.v) - v) < 0.001 ? "on" : ""; };
+      for(const v of SPD_PRESETS){
+        if(v < lo || v > hi) continue;
+        const b = el("button", null, { type:"button", textContent: v + "×" });
+        b.dataset.v = String(v);
+        b.onclick = () => { row.cur[fname] = v; inp.value = String(v); mark(); };
+        chips.appendChild(b);
+      }
+      inp.addEventListener("input", mark); mark();
+      const wrap = el("div"); wrap.append(inp, chips);
+      return field(label, wrap);
+    };
 
     // ---- head: name + (base | provider)
     const head = el("div","row");
@@ -574,8 +600,7 @@ function profileEditor(host, scope, kind){
           const rv = el("div","row");
           rv.append(field("Voice — host 1", bind(txt(row.cur.voiceA, "alloy"), "voiceA")),
                     field("Voice — host 2", bind(txt(row.cur.voiceB, "nova"), "voiceB")));
-          const pace = el("div"); pace.append(field("Speech speed (0.5–2×)", bind(el("input",null,{type:"number",min:"0.5",max:"2",step:"0.05",value:row.cur.speed||1}),"speed","input")));
-          fields.append(rm1, r0, rv, pace);
+          fields.append(rm1, r0, rv, speedField("speed", 0.5, 2, "Speech speed (0.5–2×)"));
         } else if(row.cur.prov === "elevenlabs"){
           row.modelGet = () => row.cur.elModel || "";
           const r0 = el("div","row");
@@ -584,15 +609,13 @@ function profileEditor(host, scope, kind){
           const r1 = el("div","row");
           r1.append(field("Voice ID — host 1", bind(txt(row.cur.elA, "voice id"), "elA")),
                     field("Voice ID — host 2", bind(txt(row.cur.elB, "voice id"), "elB")));
-          const pace = el("div"); pace.append(field("Speech speed (0.7–1.2×)", bind(el("input",null,{type:"number",min:"0.7",max:"1.2",step:"0.05",value:row.cur.speed||1}),"speed","input")));
-          fields.append(r0, r1, pace);
+          fields.append(r0, r1, speedField("speed", 0.7, 1.2, "Speech speed (0.7–1.2×)"));
         } else {   // browser voices
           const r0 = el("div","row");
           r0.append(field("Voice — host 1", bvSel("bvA")), field("Voice — host 2", bvSel("bvB")));
           fields.append(r0);
           const rr = el("div");
-          rr.append(field("Rate (0.5–1.5)", bind(el("input",null,{ type:"number", min:"0.5", max:"1.5", step:"0.05", value:row.cur.bvRate||1 }), "bvRate", "input")));
-          fields.append(rr);
+          fields.append(speedField("bvRate", 0.5, 1.5, "Rate (0.5–1.5)"));
         }
       };
       prov.addEventListener("change", () => { row.cur.prov = prov.value; build(); });

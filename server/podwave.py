@@ -39,7 +39,7 @@ DATA = os.path.abspath(os.environ.get("PODWAVE_DATA") or os.path.join(HERE, ".."
 STATIC = os.path.abspath(os.environ.get("PODWAVE_STATIC") or os.path.join(HERE, "..", "public"))
 PORT = int(os.environ.get("PODWAVE_PORT") or 8080)
 BIND = os.environ.get("PODWAVE_BIND") or "127.0.0.1"
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 
 WORDS_PER_MIN = 150
 GAP_SECONDS = 0.15   # default pause between lines
