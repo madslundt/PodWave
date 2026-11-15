@@ -34,25 +34,32 @@ under *More options*.
    with pacing-aware pauses (quick dialogue hand-offs ~0.08 s, beat breaks ~0.30 s) and 6 ms
    edge fades so joins never click, and stored as a 24 kHz mono WAV you can play or download.
 
-Create an episode with the single **Create episode** button. Research, writing, voices and
-storage all run on the server, so the page can close while a job continues. Come back to
-**Library** and press play. Every episode has a
+Two ways to run a job:
+
+| | In this browser | On the server (background) |
+|---|---|---|
+| Tab must stay open | ✓ | — |
+| Works from any device | ✓ | ✓ |
+| Keys live in | browser `localStorage` | server `data/config.json` |
+| Stored audio | browser IndexedDB | server `data/` + Library |
+
+Queue it, close the laptop, come back to **Library** and press play. Every episode has a
 playback pace strip (`0.5×` up to `2×`, with fine steps around normal speed); the pace you
 pick is remembered for this browser and applies to the next episode you play. A queued story appears
 under **Being created** (with progress, cancel and retry) and moves to **Created** when done —
-the Create page resets to a blank brief the moment you submit. Interrupted jobs re-queue after
+the Create page resets to a blank brief the moment you queue. Interrupted jobs re-queue after
 a restart, and voiced segments are reused, so a crash does not start over.
 
 ### Automatic episodes
 
-In **Settings → Automatic episodes**, add interests (one news search per line) and/or RSS/Atom
-feed URLs, choose daily or weekly delivery, and enable generation. At each drop time PodWave
-scores recent items against the configured LLM and queues a digest from the highest-scoring
-unseen stories. Feeds are checked every three hours by default; keyword searches require a
-Tavily key, while feeds work without one. Automatic episodes enter the regular server queue and
-appear in **Library** when finished. If nothing new meets the relevance threshold, that drop is
-skipped. The scheduler uses the server's local timezone and runs only while the server is up.
-Details and limitations are in [docs/AUTOGENERATION.md](docs/AUTOGENERATION.md).
+In **Settings → This server → Automatic episodes**, add interests (one news search per line)
+and/or RSS/Atom feed URLs, choose daily or weekly delivery, and enable generation. At each drop
+time PodWave scores recent items against the configured LLM and queues a digest from the
+highest-scoring unseen stories. Feeds are checked every three hours by default; keyword searches
+require a Tavily key, while feeds work without one. Automatic episodes enter the regular server
+queue and appear in **Library** when finished. If nothing new meets the relevance threshold,
+that drop is skipped. The scheduler uses the server's local timezone and runs only while the
+server is up. Details and limitations are in [docs/AUTOGENERATION.md](docs/AUTOGENERATION.md).
 
 The page you are on is kept in the URL (`#/create`, `#/library`, `#/settings`), so a refresh
 lands on the same page. Tab switches keep your half-written brief; a reload clears the input
@@ -88,10 +95,11 @@ token — every `/api/*` endpoint is public. Keys can also be seeded with
 
 ## Configuration
 
-- **Server settings** (Settings tab, "This server"): used for episode jobs and setup chat. Written to
+- **Server settings** (Settings tab, "This server"): used for background jobs. Written to
   `data/config.json` with mode `0600`; the API only ever reports whether a key is set.
-- Episodes can only be submitted through the PodWave server. Provider keys stay in server
-  configuration and are never sent to the page.
+- **Browser settings** (Settings tab): used when you click *Generate script* /
+  *Generate audio* on this device. Stored in `localStorage`, sent only to the providers
+  you configure.
 - **LLM**: any OpenAI-compatible `/chat/completions` (OpenAI, OpenRouter, Groq, a local
   llama.cpp/Ollama `/v1`).
 - **Keys are optional**: for local/self-hosted LLM and TTS that need no auth, leave the key
@@ -101,7 +109,7 @@ token — every `/api/*` endpoint is public. Keys can also be seeded with
 - **Long generations**: each model request attempt waits up to 10 minutes and each speech-line
   attempt up to 5 minutes before timing out. Retryable provider/network errors may trigger up to
   three attempts. Generation resumes from completed beats and voiced lines.
-- **Test buttons** (Settings) call one provider once on the server and report latency plus what came
+- **Test buttons** (Settings, both panels) call one provider once and report latency plus what came
   back, so a wrong URL, key, or model name is found in a second instead of after a 10-minute episode.
   They use the values in the fields as typed — nothing is saved, and a failed test changes nothing.
   On the server panel a blank key field means "use the stored key". `curl -X POST localhost:8080/api/test
@@ -167,6 +175,8 @@ called. Passing on CPython 3.14.9 and 3.15.2.
 ## Notes and limits
 
 - Long episodes: WAV is ~2.9 MB/audio-minute; a client-side MP3 encoder would shrink that.
-- CORS: provider requests are made by the server, so browser CORS rules do not affect episode
-  generation or provider checks.
+- CORS: browsers block some providers from a browser origin (OpenAI and ElevenLabs are fine);
+  background jobs on the server avoid the issue entirely. A browser-side Test that says "the browser
+  could not reach it" is usually this, not a bad key — the same check on the server panel will pass.
 - Ideas: RSS feed, per-beat regeneration, an MP3 encoder, PWA manifest for install-on-phone.
+- The built-in "sample script" is **example data**, not fact-checked.
