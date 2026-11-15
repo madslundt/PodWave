@@ -7,59 +7,84 @@
 <title>PodWave · AI Podcast Studio</title>
 <style>
 :root{
-  --bg:#0d1117; --panel:#161b27; --panel2:#1d2434; --line:#2a3348;
-  --text:#e8ecf4; --dim:#93a0b8; --acc:#7c5cff; --acc2:#2dd4bf;
-  --err:#ff6b6b; --ok:#4ade80; --radius:14px;
+  --bg:#0a0d15; --panel:#131a29; --panel2:#1a2336; --line:#273350;
+  --text:#eaeef8; --dim:#8e9ab4; --acc:#7c6cff; --accb:#4f7dff; --acc2:#34d8bd;
+  --err:#ff6b6b; --ok:#4ade80; --radius:16px;
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-bottom:60px}
-header{padding:22px 18px 10px;max-width:860px;margin:0 auto}
-header h1{margin:0;font-size:26px;letter-spacing:.3px}
-header h1 .mic{color:var(--acc)}
-header p{margin:4px 0 0;color:var(--dim);font-size:14px}
-main{max-width:860px;margin:0 auto;padding:0 14px}
-nav{display:flex;gap:8px;margin:14px 0}
-nav button{flex:1;padding:10px 0;background:var(--panel);color:var(--dim);border:1px solid var(--line);border-radius:10px;font-size:15px;cursor:pointer}
-nav button.active{background:var(--acc);color:#fff;border-color:var(--acc)}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin:14px 0}
-.card h2{margin:0 0 12px;font-size:17px}
-label.f{display:block;font-size:13px;color:var(--dim);margin:10px 0 4px}
+body{background:radial-gradient(1200px 520px at 50% -140px, #1c2748 0%, rgba(28,39,72,0) 70%) no-repeat fixed, var(--bg);
+  color:var(--text);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-bottom:60px;-webkit-font-smoothing:antialiased}
+::selection{background:rgba(124,108,255,.35)}
+*{scrollbar-width:thin;scrollbar-color:#2c3854 transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#2c3854;border-radius:99px;border:2px solid var(--bg)}
+::-webkit-scrollbar-track{background:transparent}
+header{padding:30px 18px 6px;max-width:880px;margin:0 auto}
+header h1{margin:0;font-size:27px;font-weight:750;letter-spacing:-.2px}
+header h1 .brand{background:linear-gradient(92deg,#a899ff 0%,var(--acc) 45%,var(--acc2) 110%);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+header h1 .tag{font-size:14px;color:var(--dim);font-weight:400}
+header p{margin:6px 0 0;color:var(--dim);font-size:14px}
+main{max-width:880px;margin:0 auto;padding:0 16px}
+nav{display:flex;gap:4px;margin:20px 0 6px;width:max-content;max-width:100%;
+  background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px}
+nav button{border:0;background:transparent;color:var(--dim);padding:9px 20px;border-radius:999px;
+  font:600 14.5px/1.4 inherit;font-family:inherit;cursor:pointer;transition:color .15s, background .15s;white-space:nowrap}
+nav button:hover{color:var(--text)}
+nav button.active{background:linear-gradient(135deg,var(--acc),var(--accb));color:#fff;box-shadow:0 4px 16px rgba(112,116,255,.35)}
+.card{background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,0) 42%),var(--panel);
+  border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;margin:16px 0;
+  box-shadow:0 12px 34px rgba(5,8,18,.45)}
+.card h2{margin:0 0 14px;font-size:16.5px;letter-spacing:-.1px}
+label.f{display:block;font-size:12.5px;font-weight:600;color:var(--dim);margin:12px 0 5px}
 input[type=text],input[type=password],input[type=number],textarea,select{
-  width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);
-  border-radius:9px;padding:10px 12px;font:inherit;outline:none}
-input:focus,textarea:focus,select:focus{border-color:var(--acc)}
+  width:100%;background:#0f1626;border:1px solid var(--line);color:var(--text);
+  border-radius:10px;padding:10px 12px;font:inherit;outline:none;transition:border-color .15s, box-shadow .15s}
+input:focus,textarea:focus,select:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(124,108,255,.18)}
 textarea{resize:vertical}
+#topics{font-size:16.5px}
 .row{display:flex;gap:12px;flex-wrap:wrap}
 .row>div{flex:1;min-width:140px}
-button.act{background:var(--acc);border:none;color:#fff;border-radius:10px;padding:11px 18px;font-size:15px;cursor:pointer}
-button.act:disabled{opacity:.45;cursor:default}
-button.ghost{background:transparent;border:1px solid var(--line);color:var(--text);border-radius:10px;padding:10px 16px;font-size:14px;cursor:pointer}
+button.act{background:linear-gradient(135deg,var(--acc),var(--accb));border:none;color:#fff;border-radius:12px;
+  padding:11px 18px;font-size:15px;font-weight:600;cursor:pointer;box-shadow:0 6px 18px rgba(104,110,255,.28);
+  transition:transform .12s, box-shadow .12s}
+button.act:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 8px 24px rgba(104,110,255,.42)}
+button.act:disabled{opacity:.4;box-shadow:none;cursor:default}
+button.ghost{background:rgba(255,255,255,.03);border:1px solid var(--line);color:var(--text);border-radius:11px;
+  padding:10px 16px;font-size:14px;cursor:pointer;transition:border-color .15s, background .15s}
+button.ghost:hover{border-color:#3a4a70;background:rgba(255,255,255,.06)}
 button.ghost.danger{border-color:#5a2530;color:var(--err)}
+button.ghost.danger:hover{border-color:#7a3242;background:rgba(255,107,107,.07)}
 .btnrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
 #status{margin-top:12px;font-size:14px;color:var(--dim);min-height:20px}
 #status.err{color:var(--err)}
 #status.ok{color:var(--ok)}
-progress{width:100%;height:8px;margin-top:8px;accent-color:var(--acc);display:none}
+progress{width:100%;height:6px;margin-top:8px;border:0;border-radius:99px;overflow:hidden;background:var(--panel2);display:none}
+progress::-webkit-progress-bar{background:var(--panel2);border-radius:99px}
+progress::-webkit-progress-value{background:linear-gradient(90deg,var(--acc),var(--acc2));border-radius:99px}
+progress::-moz-progress-bar{background:linear-gradient(90deg,var(--acc),var(--acc2));border-radius:99px}
 .src{border-left:3px solid var(--acc2);padding:4px 10px;margin:8px 0;font-size:13px;color:var(--dim)}
 .src a{color:var(--acc2);text-decoration:none}
+.src a:hover{text-decoration:underline}
 .seg{display:flex;gap:10px;margin:10px 0;align-items:flex-start}
 .who{flex:0 0 auto;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:700;border-radius:20px;padding:3px 11px;margin-top:3px}
 .who.A{background:#31256b;color:#c9bbff}
 .who.B{background:#123c38;color:#7fe7d8}
 .seg p{margin:0;flex:1}
-audio{width:100%;margin-top:10px}
-.libitem{border-bottom:1px solid var(--line);padding:12px 0}
-.libitem:last-child{border-bottom:none}
-.libitem h3{margin:0;font-size:16px}
-.libitem .meta{font-size:12.5px;color:var(--dim);margin:2px 0 6px}
+audio{width:100%;margin-top:10px;border-radius:10px}
+.libitem{border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:12px 0;background:rgba(255,255,255,.02);
+  transition:border-color .15s}
+.libitem:hover{border-color:#33436b}
+.libitem h3{margin:0;font-size:15.5px}
+.libitem .meta{font-size:12.5px;color:var(--dim);margin:3px 0 8px}
 #chat-fab{position:fixed;right:18px;bottom:18px;width:58px;height:58px;border-radius:50%;
   background:linear-gradient(135deg,var(--acc),#0084ff);display:flex;align-items:center;justify-content:center;
-  font-size:26px;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.5);z-index:90;transition:transform .15s}
+  font-size:26px;cursor:pointer;box-shadow:0 8px 28px rgba(76,92,255,.45);z-index:90;transition:transform .15s}
 #chat-fab:hover{transform:scale(1.07)}
 #chat-badge{position:absolute;top:-2px;right:-2px;width:14px;height:14px;border-radius:50%;background:#ff4b4b;border:2px solid var(--bg)}
 #chat-widget{position:fixed;right:18px;bottom:86px;width:min(350px,calc(100vw - 24px));height:min(470px,calc(100vh - 130px));
-  background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 14px 44px rgba(0,0,0,.6);
+  background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:0 14px 44px rgba(0,0,0,.6);
   display:flex;flex-direction:column;overflow:hidden;z-index:91}
 #chat-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;
   background:linear-gradient(135deg,var(--acc),#0084ff);color:#fff;font-size:14px;font-weight:600;flex:0 0 auto}
@@ -87,14 +112,15 @@ audio{width:100%;margin-top:10px}
 #btn-chat-send:disabled{opacity:.5;cursor:default}
 .small{font-size:12.5px;color:var(--dim)}
 .hint{font-size:12.5px;color:var(--dim);margin-top:6px}
-fieldset{border:1px solid var(--line);border-radius:12px;margin:0 0 16px;padding:4px 14px 14px}
-legend{font-size:14px;font-weight:600;padding:0 8px;color:var(--acc2)}
+fieldset{border:1px solid var(--line);border-radius:14px;margin:0 0 18px;padding:6px 16px 16px;background:rgba(255,255,255,.015)}
+legend{font-size:14px;font-weight:650;padding:0 8px;color:var(--acc2)}
 .hidden{display:none}
 .testout{font-size:12.5px;color:var(--dim);flex:1;min-width:160px}
 .testout.ok{color:var(--ok)}
 .testout.err{color:var(--err)}
 .testout.warn{color:#e3c46b}
-.prow{border:1px solid var(--line);border-radius:10px;padding:2px 12px 10px;margin:10px 0;background:rgba(29,36,52,.5)}
+.prow{border:1px solid var(--line);border-radius:12px;padding:2px 12px 10px;margin:10px 0;background:rgba(255,255,255,.02)}
+.pace{margin:2px 0 6px}
 .spd{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .spd button{background:var(--panel2);border:1px solid var(--line);color:var(--dim);
   border-radius:14px;padding:5px 10px;font-size:12.5px;cursor:pointer}
@@ -108,17 +134,25 @@ h3.sect{display:flex;justify-content:space-between;align-items:center;gap:10px;f
 .combo{display:flex;gap:6px}
 .combo select{flex:1}
 .combo input{flex:1}
+details.more{margin:16px 0 2px}
+details.more>summary{cursor:pointer;color:var(--dim);font-size:13.5px;list-style:none;display:flex;align-items:center;gap:8px;
+  padding:4px 0;user-select:none}
+details.more>summary::-webkit-details-marker{display:none}
+details.more>summary::before{content:"▸";font-size:12px;color:var(--acc2);transition:transform .15s}
+details.more[open]>summary::before{transform:rotate(90deg)}
+details.more>summary:hover{color:var(--text)}
 
-.scriptbox{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--panel2)}
-#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--panel2);
- border:1px solid var(--line);border-radius:10px;padding:10px 18px;font-size:14px;display:none;z-index:50;max-width:90%}
-@media (max-width:560px){ .row{flex-direction:column} }
+.scriptbox{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:#0f1626}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1c2438;
+ border:1px solid #33436b;border-radius:12px;padding:10px 18px;font-size:14px;display:none;z-index:50;max-width:90%;
+ box-shadow:0 10px 34px rgba(0,0,0,.5)}
+@media (max-width:560px){ .row{flex-direction:column} nav{width:100%} nav button{flex:1} }
 </style>
 </head>
 <body>
 <header>
-  <h1><span class="mic">🎙</span> PodWave <span style="font-size:14px;color:var(--dim);font-weight:400">· AI podcast studio</span></h1>
-  <p>Pick topics, choose a length, get an episode. Everything runs in your browser; keys stay on your device.</p>
+  <h1><span class="mic">🎙</span> <span class="brand">PodWave</span> <span class="tag">· AI podcast studio</span></h1>
+  <p>Describe an episode — it gets researched, written and voiced. Queued stories keep generating after you close the tab.</p>
 </header>
 <main>
 <nav>
@@ -130,7 +164,7 @@ h3.sect{display:flex;justify-content:space-between;align-items:center;gap:10px;f
 <!-- ============ CREATE ============ -->
 <section id="view-create">
   <div class="card">
-    <h2>1 · Episode brief</h2>
+    <h2>Episode brief</h2>
     <label class="f" id="topics-label">Topics — one per line (a single topic is fine)</label>
     <textarea id="topics" rows="3" placeholder="How Tesla is scaling FSD and how it's going so far&#10;The rise of robotaxis"></textarea>
     <div class="row">
@@ -175,62 +209,65 @@ h3.sect{display:flex;justify-content:space-between;align-items:center;gap:10px;f
         <select id="modelsel" title="The LLM that writes this episode and runs the setup chat"></select>
       </div>
     </div>
-    <div class="row" id="hosts-row">
-      <div>
-        <label class="f">Host name</label>
-        <input type="text" id="h-name1" placeholder="blank = random" maxlength="40">
-      </div>
-      <div id="h-slot2">
-        <label class="f">Co-host name</label>
-        <input type="text" id="h-name2" placeholder="blank = random" maxlength="40">
-      </div>
-      <div style="display:flex;align-items:flex-end;padding-bottom:8px">
-        <button class="ghost" id="btn-names" title="Draw two new random names">🎲 Names</button>
-      </div>
-    </div>
-    <p class="hint" id="hosts-hint">Blank names get random ones when the story is created, so the show always has real names — never “Host A”.</p>
     <div id="fields-nf">
       <label class="f">Angle or focus (optional)</label>
       <input type="text" id="n-angle" placeholder="e.g. the business story behind the tech — what changes for ordinary people">
     </div>
-    <div id="fields-fiction" class="hidden">
-      <div class="row">
+    <details class="more" id="more-box">
+      <summary>Hosts, story setup and style</summary>
+      <div class="row" id="hosts-row">
         <div>
-          <label class="f">Story tone</label>
-          <select id="f-tone">
-            <option value="">Exciting (default)</option>
-            <option>Thriller / mystery</option>
-            <option>Action-adventure</option>
-            <option>Sci-fi</option>
-            <option>Funny</option>
-            <option>Heartwarming</option>
-            <option>Spooky</option>
-            <option>Fairy tale / bedtime</option>
-          </select>
+          <label class="f">Host name</label>
+          <input type="text" id="h-name1" placeholder="blank = random" maxlength="40">
+        </div>
+        <div id="h-slot2">
+          <label class="f">Co-host name</label>
+          <input type="text" id="h-name2" placeholder="blank = random" maxlength="40">
         </div>
         <div style="display:flex;align-items:flex-end;padding-bottom:8px">
-          <label class="small" style="display:flex;align-items:center;gap:6px;margin:0">
-            <input type="checkbox" id="f-twist" style="width:auto"> Surprise twist ending</label>
+          <button class="ghost" id="btn-names" title="Draw two new random names">🎲 Names</button>
         </div>
       </div>
-      <div class="row">
-        <div><label class="f">Characters (optional)</label>
-          <input type="text" id="f-characters" placeholder="e.g. Mara, a salvage pilot, and her old rival Jin"></div>
-        <div><label class="f">Setting (optional)</label>
-          <input type="text" id="f-setting" placeholder="e.g. a derelict shipyard station on the edge of charted space"></div>
+      <p class="hint" id="hosts-hint">Blank names get random ones when the story is created, so the show always has real names — never “Host A”.</p>
+      <div id="fields-fiction" class="hidden">
+        <div class="row">
+          <div>
+            <label class="f">Story tone</label>
+            <select id="f-tone">
+              <option value="">Exciting (default)</option>
+              <option>Thriller / mystery</option>
+              <option>Action-adventure</option>
+              <option>Sci-fi</option>
+              <option>Funny</option>
+              <option>Heartwarming</option>
+              <option>Spooky</option>
+              <option>Fairy tale / bedtime</option>
+            </select>
+          </div>
+          <div style="display:flex;align-items:flex-end;padding-bottom:8px">
+            <label class="small" style="display:flex;align-items:center;gap:6px;margin:0">
+              <input type="checkbox" id="f-twist" style="width:auto"> Surprise twist ending</label>
+          </div>
+        </div>
+        <div class="row">
+          <div><label class="f">Characters (optional)</label>
+            <input type="text" id="f-characters" placeholder="e.g. Mara, a salvage pilot, and her old rival Jin"></div>
+          <div><label class="f">Setting (optional)</label>
+            <input type="text" id="f-setting" placeholder="e.g. a derelict shipyard station on the edge of charted space"></div>
+        </div>
       </div>
-    </div>
-    <label class="f">Style notes (optional)</label>
-    <input type="text" id="style" placeholder="e.g. witty but rigorous, like a tech-analysis show / a noir tone">
+      <label class="f">Style notes (optional)</label>
+      <input type="text" id="style" placeholder="e.g. witty but rigorous, like a tech-analysis show / a noir tone">
+    </details>
     <div class="btnrow">
-      <button class="act" id="btn-research">Research</button>
-      <button class="act" id="btn-script">Generate script</button>
-      <button class="act" id="btn-audio" disabled>Generate audio</button>
       <button class="act" id="btn-queue" style="display:none">Send to background</button>
+      <button class="act" id="btn-script">Generate script</button>
+      <button class="ghost" id="btn-audio" disabled>Generate audio</button>
+      <button class="ghost" id="btn-stop" style="display:none">Stop</button>
     </div>
     <div class="btnrow" style="margin-top:8px">
-      <button class="ghost" id="btn-sample">Load sample script (no key needed)</button>
-      <button class="ghost" id="btn-stop" style="display:none">Stop</button>
+      <button class="ghost sm" id="btn-research">Research first</button>
+      <button class="ghost sm" id="btn-sample">Load sample script (no key needed)</button>
     </div>
     <div id="status"></div>
     <progress id="prog"></progress>
@@ -242,15 +279,16 @@ h3.sect{display:flex;justify-content:space-between;align-items:center;gap:10px;f
   </div>
 
   <div class="card hidden" id="card-script">
-    <h2 id="script-title">2 · Script</h2>
+    <h2 id="script-title">Script</h2>
     <p class="small" id="script-desc"></p>
     <div class="scriptbox" id="script"></div>
     <p class="hint">You can edit the text below each line before generating audio.</p>
   </div>
 
   <div class="card hidden" id="card-audio">
-    <h2>3 · Episode</h2>
+    <h2>Episode</h2>
     <audio id="player" controls></audio>
+    <div id="pace-player"></div>
     <div class="btnrow">
       <button class="ghost" id="btn-download">Download .wav</button>
       <button class="act" id="btn-save">Save to Library</button>
@@ -414,6 +452,34 @@ function status(msg,kind){ const s=$("status"); s.textContent=msg||""; s.classNa
 function prog(v,max){ const p=$("prog"); if(v===null){p.style.display="none";} else {p.style.display="block"; p.max=max; p.value=v;} }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
+/* ===== listening pace: one ladder, shared with the speech-speed presets ===== */
+const PACE_STEPS = [0.5, 0.75, 0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.25, 1.5, 1.75, 2];
+let pacePref = (() => { try{ const v = parseFloat(localStorage.getItem("podwave.pace"));
+                          return (v >= 0.5 && v <= 4) ? v : 1; }catch(e){ return 1; } })();
+const paceMarks = [];                        // every visible chip row re-marks on a change
+function paceApply(){
+  for(const a of document.querySelectorAll("audio")){ try{ a.playbackRate = pacePref; }catch(e){} }
+  for(const m of paceMarks) m();
+}
+function paceRow(label){                     // chips that set the pace of every audio here
+  const box = document.createElement("div"); box.className = "pace";
+  if(label){ const l = document.createElement("div"); l.className = "small"; l.textContent = label; box.appendChild(l); }
+  const row = document.createElement("div"); row.className = "spd";
+  const btns = [];
+  const mark = () => { for(const b of btns) b.className = Math.abs(Number(b.dataset.v) - pacePref) < 0.001 ? "on" : ""; };
+  for(const v of PACE_STEPS){
+    const b = document.createElement("button"); b.type = "button"; b.textContent = v + "×"; b.dataset.v = String(v);
+    b.title = "Play at " + v + "× speed";
+    b.onclick = () => { pacePref = v; try{ localStorage.setItem("podwave.pace", String(v)); }catch(e){} paceApply(); };
+    btns.push(b); row.appendChild(b);
+  }
+  paceMarks.push(mark); mark();
+  box.appendChild(row);
+  return box;
+}
+// a rate set before the file loads gets reset by the browser, so pin it at the start of play
+addEventListener("play", e => { if(e.target && e.target.tagName === "AUDIO"){ try{ e.target.playbackRate = pacePref; }catch(err){} } }, true);
+
 /* ================= tabs (the URL hash keeps the page across a refresh) ================= */
 let currentTab = "create";
 function tabFromHash(){ return (location.hash || "").replace(/^#\/?/, ""); }
@@ -482,6 +548,8 @@ function profileEditor(host, scope, kind){
         if(!opts.length && !cur) inp.value = "";
         inp.classList.toggle("hidden", sel.value !== "__custom");
       };
+      fill(row.cur.model || "");   // start with the stored model visible, not an empty box
+
       sel.onchange = () => { row.cur.model = sel.value === "__custom" ? inp.value.trim() : sel.value;
         inp.classList.toggle("hidden", sel.value !== "__custom"); };
       inp.oninput = () => { row.cur.model = inp.value.trim(); };
@@ -515,7 +583,8 @@ function profileEditor(host, scope, kind){
         } finally { btn.disabled = false; }
       };
       wrap.append(sel, inp, btn);
-      return { el: wrap, set: m => fill(m || "") };
+      // row.cur.model is kept in sync by onchange/oninput, so get() just reads it back
+      return { el: wrap, set: m => fill(m || ""), get: () => row.cur.model };
     };
 
     // server-scope key: blank keeps the stored key, the tick removes it
@@ -546,7 +615,8 @@ function profileEditor(host, scope, kind){
     };
     // speech speed: fine presets (dense around 1×, since 1.0 is a touch fast and
     // 0.75 a touch slow) plus the number box for anything in between
-    const SPD_PRESETS = [0.5, 0.75, 0.85, 0.9, 0.95, 1, 1.05, 1.1, 1.25, 1.5];
+    const SPD_PRESETS = PACE_STEPS.filter(v => v <= 1.5);   // voices beyond 1.5x stop being words;
+                                                           // the provider range below hides the rest
     const speedField = (fname, lo, hi, label) => {
       const inp = el("input", null, { type:"number", min:String(lo), max:String(hi),
                                       step:"0.05", value:String(row.cur[fname] || 1) });
@@ -756,6 +826,7 @@ function showGenreFields(){
   const fic = $("genre").value==="fiction";
   $("fields-fiction").classList.toggle("hidden",!fic);
   $("fields-nf").classList.toggle("hidden",fic);
+  if(fic) $("more-box").open = true;   // the story setup lives there — never hide it from a fiction writer
   $("topics-label").textContent = fic
     ? "Story seeds — one per line (a premise, a scene, a character)"
     : "Topics — one per line (a single topic is fine)";
@@ -969,7 +1040,7 @@ Respond JSON: {"segments":[{"speaker":${keysOr},"text":"spoken words"}]}`},
   }finally{ prog(null); $("btn-stop").style.display="none"; }
 }
 function renderScript(){
-  $("script-title").textContent="2 · Script — "+script.title;
+  $("script-title").textContent="Script — "+script.title;
   $("script-desc").textContent=script.description;
   $("script").innerHTML=script.segments.map((s,i)=>
     `<div class="seg"><span class="who ${s.speaker}" title="${esc(hostLabel(s.speaker))}">${esc(hostLabel(s.speaker))}</span><textarea id="seg-${i}" rows="${Math.max(2,Math.ceil(s.text.length/90))}" data-i="${i}">${esc(s.text)}</textarea></div>`).join("");
@@ -1177,7 +1248,7 @@ async function renderLibrary(){
   for(const it of items){
     const d=document.createElement("div"); d.className="libitem";
     d.innerHTML=`<h3>${esc(it.title)}</h3><div class="meta">${new Date(it.date).toLocaleString()}${it.audio?` · ${(it.audio.size/1048576).toFixed(1)} MB`:" · script only"}</div>`;
-    if(it.audio){ const a=document.createElement("audio"); a.controls=true; a.src=URL.createObjectURL(it.audio); d.appendChild(a); }
+    if(it.audio){ const a=document.createElement("audio"); a.controls=true; a.src=URL.createObjectURL(it.audio); d.appendChild(a); d.appendChild(paceRow()); }
     const row=document.createElement("div"); row.className="btnrow";
     if(it.audio){ const dl=document.createElement("button"); dl.className="ghost"; dl.textContent="Download";
       dl.onclick=()=>{const x=document.createElement("a");x.href=URL.createObjectURL(it.audio);x.download=(it.title||"episode").replace(/\s+/g,"-")+".wav";x.click();}; row.appendChild(dl); }
@@ -1185,6 +1256,7 @@ async function renderLibrary(){
     del.onclick=async()=>{ await idbDel(it.id); renderLibrary(); }; row.appendChild(del);
     d.appendChild(row); box.appendChild(d);
   }
+  paceApply();
 }
 
 /* ================= server: background jobs + stored episodes ================= */
@@ -1448,6 +1520,7 @@ async function renderServerLibrary(){
     const d = document.createElement("div"); d.className = "libitem";
     d.innerHTML = `<h3>${esc(e.title)}</h3><div class="meta">${new Date(e.created*1000).toLocaleString()} · ${(e.seconds/60).toFixed(1)} min · ${(e.bytes/1048576).toFixed(1)} MB</div>`;
     const a = document.createElement("audio"); a.controls = true; a.preload = "none"; a.src = e.url; d.appendChild(a);
+    d.appendChild(paceRow());
     const row = document.createElement("div"); row.className = "btnrow";
     const dl = document.createElement("a"); dl.className = "ghost"; dl.textContent = "Download"; dl.href = e.url;
     dl.download = (e.title||"episode").replace(/\s+/g,"-")+".wav"; dl.style.cssText = "display:inline-block;text-decoration:none;padding:10px 16px;border:1px solid var(--line);border-radius:10px;color:var(--text)";
@@ -1470,20 +1543,18 @@ async function renderServerLibrary(){
     row.appendChild(del);
     d.appendChild(row); box.appendChild(d);
   }
+  paceApply();
 }
 
 async function fillServerSettings(){
   if(!srv) return;
   try{ const c = await srvApi("/api/config");
-    $("sv-llm-base").value = c.llm.base; $("sv-llm-model").value = c.llm.model;
-    setKeyField("sv-llm-key", "sv-llm-key-clear", c.llm.keySet);
+    srvCfg = c;                                  // the Create-page model picker reads this
+    editors.sv.llm.render(c.llms, c.defaultLlm);
+    editors.sv.tts.render(c.ttss, c.defaultTts);
     $("sv-search-prov").value = c.search.prov;
     setKeyField("sv-search-key", "sv-search-key-clear", c.search.keySet);
-    $("sv-tts-prov").value = c.tts.prov; $("sv-tts-model").value = c.tts.model; $("sv-tts-base").value = c.tts.base;
-    setKeyField("sv-tts-key", "sv-tts-key-clear", c.tts.keySet);
-    $("sv-tts-voiceA").value = c.tts.voiceA; $("sv-tts-voiceB").value = c.tts.voiceB;
-    setKeyField("sv-el-key", "sv-el-key-clear", c.tts.elKeySet);
-    $("sv-el-model").value = c.tts.elModel; $("sv-el-voiceA").value = c.tts.elA; $("sv-el-voiceB").value = c.tts.elB;
+    refreshModelPicker();
   }catch(e){ toast("Server settings unavailable: "+e.message); }
 }
 function setKeyField(input, clear, isSet){
@@ -1494,26 +1565,23 @@ function setKeyField(input, clear, isSet){
   $(input).placeholder = isSet ? "stored ✓ (blank keeps it)" : "not set — tick for no auth";
 }
 $("btn-server-save").onclick = async () => {
+  // the profile rows are the single source of truth; a profile whose key input is
+  // blank-and-not-cleared simply omits the key field, and the server keeps its stored one
   const body = {
-    llm:{ base:$("sv-llm-base").value.trim(), model:$("sv-llm-model").value.trim() },
-    search:{ prov:$("sv-search-prov").value },
-    tts:{ prov:$("sv-tts-prov").value, base:$("sv-tts-base").value.trim(), model:$("sv-tts-model").value.trim(),
-          voiceA:$("sv-tts-voiceA").value.trim(), voiceB:$("sv-tts-voiceB").value.trim(),
-          elModel:$("sv-el-model").value.trim(), elA:$("sv-el-voiceA").value.trim(), elB:$("sv-el-voiceB").value.trim() }
+    llms: editors.sv.llm.list(), defaultLlm: editors.sv.llm.defaultId(),
+    ttss: editors.sv.tts.list(), defaultTts: editors.sv.tts.defaultId(),
+    search: { prov: $("sv-search-prov").value }
   };
-  const k = $("sv-llm-key").value.trim();
-  if(k) body.llm.key = k; else if($("sv-llm-key-clear").checked) body.llm.key = "";
   const sk = $("sv-search-key").value.trim();
   if(sk) body.search.key = sk; else if($("sv-search-key-clear").checked) body.search.key = "";
-  const tk = $("sv-tts-key").value.trim();
-  if(tk) body.tts.key = tk; else if($("sv-tts-key-clear").checked) body.tts.key = "";
-  const ek = $("sv-el-key").value.trim();
-  if(ek) body.tts.elKey = ek; else if($("sv-el-key-clear").checked) body.tts.elKey = "";
   try{
-    await srvApi("/api/config", {method:"PUT", body:JSON.stringify(body)});
+    srvCfg = await srvApi("/api/config", {method:"PUT", body:JSON.stringify(body)});
+    editors.sv.llm.render(srvCfg.llms, srvCfg.defaultLlm);     // re-render with fresh keySet flags
+    editors.sv.tts.render(srvCfg.ttss, srvCfg.defaultTts);
+    setKeyField("sv-search-key", "sv-search-key-clear", srvCfg.search.keySet);
+    refreshModelPicker();
     $("server-note").textContent = "Saved on the server ✓";
     setTimeout(()=>$("server-note").textContent = "", 2500);
-    fillServerSettings();
   }catch(e){ toast("Server save failed: "+e.message); }
 };
 
@@ -1612,38 +1680,32 @@ async function testTts(){
   }catch(e){ setOut("test-tts-out", "fail", friendly(e)); return "fail"; }
 }
 
-/* server panel: sends the typed values, with a blank key meaning "use the stored one" */
-function svOverrides(target){
-  const o = {};
-  const key = (box, input, clear, field="key") => {
-    const v = $(input).value.trim();
-    if(v) box[field] = v; else if($(clear).checked) box[field] = "";
-  };
-  if(target === "llm" || target === "all"){
-    const b = {base:$("sv-llm-base").value.trim(), model:$("sv-llm-model").value.trim()};
-    key(b, "sv-llm-key", "sv-llm-key-clear"); o.llm = b;
-  }
-  if(target === "search" || target === "all"){
-    const b = {prov:$("sv-search-prov").value};
-    key(b, "sv-search-key", "sv-search-key-clear"); o.search = b;
-  }
-  if(target === "tts" || target === "all"){
-    const b = {prov:$("sv-tts-prov").value, base:$("sv-tts-base").value.trim(), model:$("sv-tts-model").value.trim(),
-               voiceA:$("sv-tts-voiceA").value.trim(), voiceB:$("sv-tts-voiceB").value.trim(),
-               elModel:$("sv-el-model").value.trim(), elA:$("sv-el-voiceA").value.trim(), elB:$("sv-el-voiceB").value.trim()};
-    key(b, "sv-tts-key", "sv-tts-key-clear"); key(b, "sv-el-key", "sv-el-key-clear", "elKey"); o.tts = b;
-  }
-  return o;
+/* server panel: a profile row's Test sends just that row's typed values (blank key =
+   "use the stored key of that profile"); the search button reads the search fields */
+function searchOverrides(){
+  const b = { prov: $("sv-search-prov").value };
+  const k = $("sv-search-key").value.trim();
+  if(k) b.key = k; else if($("sv-search-key-clear").checked) b.key = "";
+  return b;
 }
-async function svTest(target, outId){
-  setOut(outId, "run", "Testing on the server…");
+async function svTest(target, out, over){
+  const set = (state, text) => {
+    if(out instanceof Element){
+      out.className = "testout " + ({ok:"ok", fail:"err", unset:"warn", warn:"warn", run:"run"}[state] || "");
+      out.textContent = text; out.title = text;
+    } else setOut(out, state, text);
+  };
+  set("run", "Testing on the server…");
   try{
-    const r = await srvApi("/api/test", {method:"POST", body:JSON.stringify(Object.assign({target}, svOverrides(target)))});
+    const body = { target };
+    if(over) body[target] = over;
+    else if(target === "search" || target === "all") body.search = searchOverrides();
+    const r = await srvApi("/api/test", {method:"POST", body:JSON.stringify(body)});
     const got = Object.entries(r.results), bad = got.filter(([,v]) => v.state === "fail").length;
     const line = got.map(([n, v]) => `${SV_NAME[n] || n}: ${v.detail}`).join("   ·   ");
-    setOut(outId, bad ? "fail" : (got.every(([,v]) => v.state === "unset") ? "warn" : "ok"), line);
+    set(bad ? "fail" : (got.every(([,v]) => v.state === "unset") ? "warn" : "ok"), line);
     return bad ? "fail" : "ok";
-  }catch(e){ setOut(outId, "fail", friendly(e)); return "fail"; }
+  }catch(e){ set("fail", friendly(e)); return "fail"; }
 }
 runBtn("test-llm", testLlm);
 runBtn("test-search", testSearch);
@@ -1653,10 +1715,10 @@ runBtn("btn-test-all", async () => {
   setOut("test-all-out", s.includes("fail") ? "fail" : "ok",
          `model ${word(s[0])} · search ${word(s[1])} · voices ${word(s[2])}`);
 });
-runBtn("test-sv-llm", () => svTest("llm", "test-sv-llm-out"));
 runBtn("test-sv-search", () => svTest("search", "test-sv-search-out"));
-runBtn("test-sv-tts", () => svTest("tts", "test-sv-tts-out"));
+// llm/tts tests live inside each server profile row (profileEditor.runTest -> svTest)
 
+$("pace-player").appendChild(paceRow("Playback speed"));
 fillSettings();
 showGenreFields();
 showTab(tabFromHash());

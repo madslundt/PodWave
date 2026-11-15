@@ -19,7 +19,9 @@ close the tab.
    floats in the corner (a Messenger-style bubble panel): describe the episode in your own
    words and the model fills the fields live while you talk, asking only about the few
    details that would most improve the episode. You can stop, edit anything, or generate at
-   any time — the chat never blocks the brief.
+   any time — the chat never blocks the brief. The Create page stays out of the way: topics, genre, format,
+length, language and model are always in view; host names, story setup and style notes fold away
+under *More options*.
 2. **Research** — for non-fiction, Tavily (optional) collects sources; otherwise the model's
    own knowledge is used.
 3. **Script** — the model plans 4–10 beats, then writes each beat as spoken dialogue
@@ -41,7 +43,9 @@ Two ways to run a job:
 | Keys live in | browser `localStorage` | server `data/config.json` |
 | Stored audio | browser IndexedDB | server `data/` + Library |
 
-Queue it, close the laptop, come back to **Library** and press play. A queued story appears
+Queue it, close the laptop, come back to **Library** and press play. Every episode has a
+playback pace strip (`0.5×` up to `2×`, with fine steps around normal speed); the pace you
+pick is remembered for this browser and applies to the next episode you play. A queued story appears
 under **Being created** (with progress, cancel and retry) and moves to **Created** when done —
 the Create page resets to a blank brief the moment you queue. Interrupted jobs re-queue after
 a restart, and voiced segments are reused, so a crash does not start over.
