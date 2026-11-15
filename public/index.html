@@ -113,6 +113,8 @@ audio{width:100%;margin-top:10px;border-radius:10px}
 .small{font-size:12.5px;color:var(--dim)}
 .hint{font-size:12.5px;color:var(--dim);margin-top:6px}
 fieldset{border:1px solid var(--line);border-radius:14px;margin:0 0 18px;padding:6px 16px 16px;background:rgba(255,255,255,.015)}
+.auto-row{border:1px solid var(--line);border-radius:14px;padding:12px 14px 14px;margin:12px 0;background:rgba(255,255,255,.02)}
+.auto-row .row>div{min-width:110px}
 legend{font-size:14px;font-weight:650;padding:0 8px;color:var(--acc2)}
 .hidden{display:none}
 .testout{font-size:12.5px;color:var(--dim);flex:1;min-width:160px}
@@ -158,6 +160,7 @@ details.more>summary:hover{color:var(--text)}
 <nav>
   <button id="tab-create" class="active">Create</button>
   <button id="tab-library">Library</button>
+  <button id="tab-automations">Automations</button>
   <button id="tab-settings">Settings</button>
 </nav>
 
@@ -318,6 +321,24 @@ details.more>summary:hover{color:var(--text)}
 </section>
 
 <!-- ============ SETTINGS ============ -->
+<!-- ============ AUTOMATIONS ============ -->
+<section id="view-automations" class="hidden">
+  <div class="card">
+    <h2>Automations</h2>
+    <p class="small">Each automation is its own show, dropped on its own schedule: a <b>news digest</b> researched from interest searches and RSS/Atom feeds (searches need a Tavily key; feeds work without one), or a <b>story</b> written from your idea list. New items are scored once against all digest interests. They run on the server (saved to <code>data/config.json</code>) and need a model under <b>Settings → This server</b>.</p>
+    <p class="hint hidden" id="auto-offline">Automations run in the background, so they need the app served by a PodWave server — this page is not connected to one.</p>
+    <div id="auto-form">
+      <label class="f" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="auto-enabled" style="width:auto"> Generate automatically</label>
+      <h3 class="sect"><span>Your automations</span><button class="ghost sm" id="auto-add">+ Add automation</button></h3>
+      <div id="auto-rows"></div>
+      <div class="btnrow">
+        <button class="act" id="btn-auto-save">Save automations</button>
+        <span class="small" id="auto-note"></span>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section id="view-settings" class="hidden">
   <div class="card">
     <h2>Settings</h2>
@@ -340,23 +361,6 @@ details.more>summary:hover{color:var(--text)}
       <div class="btnrow" style="margin-top:10px">
         <button class="ghost" id="test-sv-search" data-group="sv">Test search</button>
         <span class="testout" id="test-sv-search-out"></span>
-      </div>
-      <h3 class="sect"><span>Automatic episodes</span></h3>
-      <p class="small">PodWave checks these sources, scores new items against your interests, and queues a researched digest on this server’s local clock. Keyword searches need a Tavily key; RSS/Atom feeds work without one.</p>
-      <label class="f" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="auto-enabled" style="width:auto"> Generate automatically</label>
-      <label class="f">Interests — one per line; each line is searched as a news topic</label>
-      <textarea id="auto-watch" rows="3" placeholder="AI and robotics&#10;Danish politics&#10;Climate technology"></textarea>
-      <label class="f">RSS / Atom feed URLs — one per line</label>
-      <textarea id="auto-feeds" rows="3" placeholder="https://example.com/feed.xml"></textarea>
-      <div class="row">
-        <div><label class="f">Schedule</label><select id="auto-cadence"><option value="daily">Daily</option><option value="weekly">Weekly</option></select></div>
-        <div><label class="f">Drop time (server local time)</label><input type="time" id="auto-time" value="07:00"></div>
-        <div id="auto-weekday-wrap"><label class="f">Day</label><select id="auto-weekday"><option value="0">Monday</option><option value="1">Tuesday</option><option value="2">Wednesday</option><option value="3">Thursday</option><option value="4">Friday</option><option value="5">Saturday</option><option value="6">Sunday</option></select></div>
-      </div>
-      <div class="row">
-        <div><label class="f">Stories per episode</label><input type="number" id="auto-stories" min="1" max="6" value="2"></div>
-        <div><label class="f">Episode length (minutes)</label><input type="number" id="auto-minutes" min="2" max="45" value="10"></div>
-        <div><label class="f">Minimum relevance (0–10)</label><input type="number" id="auto-score" min="0" max="10" value="5"></div>
       </div>
       <div class="btnrow">
         <button class="act" id="btn-server-save">Save server settings</button>
@@ -501,17 +505,18 @@ addEventListener("play", e => { if(e.target && e.target.tagName === "AUDIO"){ tr
 let currentTab = "create";
 function tabFromHash(){ return (location.hash || "").replace(/^#\/?/, ""); }
 function showTab(t){
-  if(!["create","library","settings"].includes(t)) t = "create";
+  if(!["create","library","automations","settings"].includes(t)) t = "create";
   currentTab = t;
-  for(const u of ["create","library","settings"]){
+  for(const u of ["create","library","automations","settings"]){
     $("tab-"+u).classList.toggle("active",u===t);
     $("view-"+u).classList.toggle("hidden",u!==t);
   }
   if(location.hash !== "#"+t){ try{ history.replaceState(null,"","#"+t); }catch(e){} }
   if(t==="library"){ renderLibrary(); renderServerLibrary(); refreshJobs(); }
+  if(t==="automations"){ fillAutomations(); }
   if(t==="settings"){ fillSettings(); fillServerSettings(); }
 }
-for(const t of ["create","library","settings"]) $("tab-"+t).onclick = () => showTab(t);
+for(const t of ["create","library","automations","settings"]) $("tab-"+t).onclick = () => showTab(t);
 addEventListener("hashchange", () => { if(tabFromHash() !== currentTab) showTab(tabFromHash()); });
 
 /* ============ settings: several LLMs and several voices, edited as rows ============ */
@@ -1301,6 +1306,7 @@ async function detectServer(){
   $("chat-fab").style.display = "flex";
   renderServerLibrary(); refreshJobs();
   fillServerSettings();          // loads srvCfg so the Create-page model picker can fill
+  if(currentTab === "automations") fillAutomations();   // the tab rendered before this probe finished
 }
 function jobRow(j){
   const d = document.createElement("div"); d.className = "libitem";
@@ -1563,6 +1569,91 @@ async function renderServerLibrary(){
   paceApply();
 }
 
+/* ---- automations: a list of shows, each with its own kind + schedule ---- */
+const AUTO_WD = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+let autoGlobals = { pollMinutes: 180, maxAgeHours: 48, language: "", llm: "" };
+let autoRows = [];
+function showClean(s, i){
+  s = s || {};
+  return { id: String(s.id || ""), name: String(s.name || ("Automation " + (i + 1))),
+    kind: s.kind === "story" ? "story" : "digest", enabled: s.enabled !== false,
+    watch: Array.isArray(s.watch) ? s.watch : [], feeds: Array.isArray(s.feeds) ? s.feeds : [],
+    prompt: String(s.prompt || "An adventure story with an unexpected ending"),
+    cadence: s.cadence === "weekly" ? "weekly" : "daily",
+    hour: Math.max(0, Math.min(23, Math.round(+s.hour) || (s.hour === 0 ? 0 : 7))),
+    minute: Math.max(0, Math.min(59, Math.round(+s.minute) || 0)),
+    weekday: Math.max(0, Math.min(6, Math.round(+s.weekday) || 0)),
+    stories: Math.max(1, Math.min(6, Math.round(+s.stories) || 2)),
+    minutes: Math.max(2, Math.min(45, Math.round(+s.minutes) || 10)),
+    minScore: Math.max(0, Math.min(10, Math.round(+s.minScore) || (s.minScore === 0 ? 0 : 5))) };
+}
+function autoRowEl(s){
+  const d = document.createElement("div"); d.className = "auto-row";
+  const opt = (v, t) => '<option value="' + v + '">' + t + '</option>';
+  d.innerHTML = [
+    '<div class="row">',
+      '<div style="flex:2"><label class="f">Name</label><input class="a-name" maxlength="60"></div>',
+      '<div><label class="f">Type</label><select class="a-kind">' + opt("digest", "News digest") + opt("story", "Story") + '</select></div>',
+      '<div style="align-self:flex-end;display:flex;gap:8px;align-items:center">',
+        '<label class="f" style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" class="a-on" style="width:auto"> On</label>',
+        '<button class="ghost sm danger a-del" title="Remove">✕</button></div>',
+    '</div>',
+    '<div class="a-digest">',
+      '<label class="f">Interests — one search per line</label>',
+      '<textarea class="a-watch" rows="2" placeholder="AI and robotics&#10;Danish politics"></textarea>',
+      '<label class="f">RSS / Atom feed URLs — one per line</label>',
+      '<textarea class="a-feeds" rows="2" placeholder="https://example.com/feed.xml"></textarea>',
+    '</div>',
+    '<div class="a-story"><label class="f">Story ideas — one per line, rotated at each drop</label>',
+      '<textarea class="a-prompt" rows="2" placeholder="A lighthouse keeper, the sea, and a letter never sent"></textarea></div>',
+    '<div class="row">',
+      '<div><label class="f">Schedule</label><select class="a-cadence">' + opt("daily", "Daily") + opt("weekly", "Weekly") + '</select></div>',
+      '<div><label class="f">Drop time (server local)</label><input type="time" class="a-time"></div>',
+      '<div class="a-wdw"><label class="f">Day</label><select class="a-weekday">' + AUTO_WD.map((t, i) => opt(i, t)).join("") + '</select></div>',
+      '<div class="a-stw"><label class="f">Stories</label><input type="number" class="a-stories" min="1" max="6"></div>',
+      '<div><label class="f">Minutes</label><input type="number" class="a-minutes" min="2" max="45"></div>',
+      '<div class="a-scw"><label class="f">Min relevance</label><input type="number" class="a-score" min="0" max="10"></div>',
+    '</div>'].join("");
+  const q = sel => d.querySelector(sel);
+  q(".a-name").value = s.name; q(".a-kind").value = s.kind; q(".a-on").checked = s.enabled;
+  q(".a-watch").value = s.watch.join("\n"); q(".a-feeds").value = s.feeds.join("\n");
+  q(".a-prompt").value = s.prompt; q(".a-cadence").value = s.cadence;
+  q(".a-time").value = String(s.hour).padStart(2, "0") + ":" + String(s.minute).padStart(2, "0");
+  q(".a-weekday").value = String(s.weekday);
+  q(".a-stories").value = s.stories; q(".a-minutes").value = s.minutes; q(".a-score").value = s.minScore;
+  const sync = () => {
+    const story = q(".a-kind").value === "story";
+    d.querySelectorAll(".a-digest,.a-stw,.a-scw").forEach(e => e.classList.toggle("hidden", story));
+    q(".a-story").classList.toggle("hidden", !story);
+    q(".a-wdw").classList.toggle("hidden", q(".a-cadence").value !== "weekly");
+  };
+  q(".a-kind").onchange = sync; q(".a-cadence").onchange = sync; sync();
+  q(".a-del").onclick = () => { autoRows = autoRows.filter(r => r.el !== d); d.remove(); };
+  d._read = () => {
+    const hm = (q(".a-time").value || "07:00").split(":").map(Number);
+    return showClean({ id: s.id, name: q(".a-name").value.trim(), kind: q(".a-kind").value,
+      enabled: q(".a-on").checked,
+      watch: q(".a-watch").value.split(/\n+/).map(x => x.trim()).filter(Boolean),
+      feeds: q(".a-feeds").value.split(/\n+/).map(x => x.trim()).filter(Boolean),
+      prompt: q(".a-prompt").value, cadence: q(".a-cadence").value, hour: hm[0], minute: hm[1],
+      weekday: Number(q(".a-weekday").value), stories: Number(q(".a-stories").value),
+      minutes: Number(q(".a-minutes").value), minScore: Number(q(".a-score").value) }, 0);
+  };
+  return d;
+}
+function renderAutoRows(shows){
+  autoRows = [];
+  const box = $("auto-rows"); box.innerHTML = "";
+  (shows && shows.length ? shows : [{}]).forEach((s, i) => {
+    const el = autoRowEl(showClean(s, i));
+    box.appendChild(el); autoRows.push({ el, read: el._read });
+  });
+}
+$("auto-add").onclick = () => {
+  const el = autoRowEl(showClean({ name: "Automation " + (autoRows.length + 1) }, autoRows.length));
+  $("auto-rows").appendChild(el); autoRows.push({ el, read: el._read });
+};
+
 async function fillServerSettings(){
   if(!srv) return;
   try{ const c = await srvApi("/api/config");
@@ -1571,20 +1662,30 @@ async function fillServerSettings(){
     editors.sv.tts.render(c.ttss, c.defaultTts);
     $("sv-search-prov").value = c.search.prov;
     setKeyField("sv-search-key", "sv-search-key-clear", c.search.keySet);
-    const a = c.auto || {};
-    $("auto-enabled").checked = !!a.enabled;
-    $("auto-watch").value = (a.watch || []).join("\n");
-    $("auto-feeds").value = (a.feeds || []).join("\n");
-    $("auto-cadence").value = a.cadence || "daily";
-    $("auto-time").value = String(a.hour ?? 7).padStart(2,"0") + ":" + String(a.minute ?? 0).padStart(2,"0");
-    $("auto-weekday").value = String(a.weekday ?? 0);
-    $("auto-stories").value = a.stories ?? 2;
-    $("auto-minutes").value = a.minutes ?? 10;
-    $("auto-score").value = a.minScore ?? 5;
-    $("auto-weekday-wrap").classList.toggle("hidden", $("auto-cadence").value !== "weekly");
     refreshModelPicker();
   }catch(e){ toast("Server settings unavailable: "+e.message); }
 }
+async function fillAutomations(){
+  if(!srv){ $("auto-offline").classList.remove("hidden"); $("auto-form").classList.add("hidden"); return; }
+  $("auto-offline").classList.add("hidden"); $("auto-form").classList.remove("hidden");
+  try{ const c = await srvApi("/api/config");
+    srvCfg = c;                                  // the Create-page model picker reads this
+    const A = c.auto || {};
+    $("auto-enabled").checked = !!A.enabled;
+    autoGlobals = { pollMinutes: A.pollMinutes ?? 180, maxAgeHours: A.maxAgeHours ?? 48,
+                    language: A.language || "", llm: A.llm || "" };
+    renderAutoRows(Array.isArray(A.shows) && A.shows.length ? A.shows : [{}]);
+  }catch(e){ toast("Automations unavailable: "+e.message); }
+}
+$("btn-auto-save").onclick = async () => {
+  if(!srv){ toast("Automations need a server connection."); return; }
+  try{
+    await srvApi("/api/config", {method:"PUT", body:JSON.stringify({
+      auto: Object.assign({}, autoGlobals, { enabled: $("auto-enabled").checked, shows: autoRows.map(r => r.read()) }) })});
+    $("auto-note").textContent = "Saved on the server ✓";
+    setTimeout(()=>$("auto-note").textContent = "", 2500);
+  }catch(e){ toast("Automations save failed: "+e.message); }
+};
 function setKeyField(input, clear, isSet){
   $(input).value = "";
   $(clear).checked = !isSet;           // no stored key → default to "no auth"
@@ -1592,23 +1693,13 @@ function setKeyField(input, clear, isSet){
   $(clear).onchange = () => { $(input).disabled = $(clear).checked; };
   $(input).placeholder = isSet ? "stored ✓ (blank keeps it)" : "not set — tick for no auth";
 }
-$("auto-cadence").onchange = () => $("auto-weekday-wrap").classList.toggle("hidden", $("auto-cadence").value !== "weekly");
 $("btn-server-save").onclick = async () => {
   // the profile rows are the single source of truth; a profile whose key input is
   // blank-and-not-cleared simply omits the key field, and the server keeps its stored one
   const body = {
     llms: editors.sv.llm.list(), defaultLlm: editors.sv.llm.defaultId(),
     ttss: editors.sv.tts.list(), defaultTts: editors.sv.tts.defaultId(),
-    search: { prov: $("sv-search-prov").value },
-    auto: (() => {
-      const [hour, minute] = ($("auto-time").value || "07:00").split(":").map(Number);
-      return { enabled: $("auto-enabled").checked,
-        watch: $("auto-watch").value.split(/\n+/).map(x=>x.trim()).filter(Boolean),
-        feeds: $("auto-feeds").value.split(/\n+/).map(x=>x.trim()).filter(Boolean),
-        cadence: $("auto-cadence").value, hour, minute,
-        weekday: Number($("auto-weekday").value), stories: Number($("auto-stories").value),
-        minutes: Number($("auto-minutes").value), minScore: Number($("auto-score").value) };
-    })()
+    search: { prov: $("sv-search-prov").value }
   };
   const sk = $("sv-search-key").value.trim();
   if(sk) body.search.key = sk; else if($("sv-search-key-clear").checked) body.search.key = "";

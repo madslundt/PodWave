@@ -50,15 +50,22 @@ under **Being created** (with progress, cancel and retry) and moves to **Created
 the Create page resets to a blank brief the moment you queue. Interrupted jobs re-queue after
 a restart, and voiced segments are reused, so a crash does not start over.
 
-### Automatic episodes
+### Automations
 
-In **Settings → This server → Automatic episodes**, add interests (one news search per line)
-and/or RSS/Atom feed URLs, choose daily or weekly delivery, and enable generation. At each drop
-time PodWave scores recent items against the configured LLM and queues a digest from the
-highest-scoring unseen stories. Feeds are checked every three hours by default; keyword searches
-require a Tavily key, while feeds work without one. Automatic episodes enter the regular server
-queue and appear in **Library** when finished. If nothing new meets the relevance threshold,
-that drop is skipped. The scheduler uses the server's local timezone and runs only while the
+The **Automations** tab lets you set up **several automations**, each its own show with its
+own schedule (the scheduler itself runs on the server — see **Settings → This server**):
+
+- **News digest** — give it interests (one news search per line) and/or RSS/Atom feed URLs.
+  PodWave polls the feeds every three hours, scores new items once with your model against all
+  shows' interests, and at the show's drop time queues an episode from its top unseen stories.
+  Keyword searches need a Tavily key; feeds work without one.
+- **Story** — write story ideas (one per line) and they rotate at each drop: no feeds, no search
+  key, just fiction on schedule.
+
+Each show fires daily (any time) or weekly (any weekday + time), so *daily news, a weekly topic
+update and a daily bedtime story* can all run side by side. Automatic episodes enter the regular
+server queue and appear in **Library** when finished; a digest drop with nothing new above its
+relevance bar is skipped. The scheduler uses the server's local timezone and runs only while the
 server is up. Details and limitations are in [docs/AUTOGENERATION.md](docs/AUTOGENERATION.md).
 
 The page you are on is kept in the URL (`#/create`, `#/library`, `#/settings`), so a refresh
@@ -159,7 +166,7 @@ matters to you.
 uv run tests/e2e.py            # or: python3 tests/e2e.py
 ```
 
-Starts the server with a mock OpenAI-compatible provider in a temp dir and checks 101
+Starts the server with a mock OpenAI-compatible provider in a temp dir and checks 108
 things: job lifecycle, cancel and retry, resume after `SIGKILL`, WAV validity and
 duration, beat-aware pacing and loudness matching of the joined audio, the story-brief
 and language fields reaching the model and the voice instructions, host names (typed ones

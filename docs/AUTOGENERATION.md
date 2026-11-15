@@ -5,9 +5,11 @@ implementation section describe the original sketch; where they differ, the code
 
 ## What is implemented
 
-PodWave watches RSS/Atom feeds and Tavily news searches built from an interest list, scores new
-items with the configured LLM, and queues a non-fiction digest on a daily or weekly schedule.
-Configure it under **Settings → This server → Automatic episodes**; it is disabled by default.
+PodWave runs **several automations side by side**. Each automation is a show with its own
+schedule (daily or weekly) and is either a **news digest** — fed by RSS/Atom feeds and Tavily
+interest searches, scored with the configured LLM — or a **story**, written from a rotating list
+of ideas with no news involved at all. Configure them on the **Automations** tab; generation is disabled until the master
+switch is on.
 
 ```mermaid
 flowchart LR
@@ -19,13 +21,20 @@ flowchart LR
   F --> G[Research, script, audio, Library]
 ```
 
-- **Polling:** feeds every three hours by default; interest searches run at schedule time and
-  need a Tavily key. Feed parsing is stdlib-only (`xml.etree`), RSS 2.0 and Atom both work.
-- **Dedup and memory:** URLs are deduplicated and items are kept in the local SQLite database
-  (`seen` table), so stories are not repeated; items whose batch failed scoring are retried on a
-  later poll.
-- **Scheduling:** the scheduler thread ticks on the server's local clock; weekly delivery picks
-  a weekday (Monday = 0). If no recent item meets the relevance threshold, that drop is skipped.
+- **Polling:** the union of every digest show's feeds every three hours by default; interest
+  searches run alongside them and need a Tavily key. Feed parsing is stdlib-only (`xml.etree`),
+  RSS 2.0 and Atom both work.
+- **Scoring and routing:** each new item gets one LLM pass against all shows' interests — a
+  0–10 score plus which shows it matches (`seen.tags`). A digest drops in stories tagged for it
+  (untagged items match every show) that it has not already used (`seen.used_by`), so two shows
+  can share the story pool without repeating each other's picks.
+- **Dedup and memory:** URLs are deduplicated and items live in the local SQLite `seen` table;
+  items whose scoring batch failed are retried on a later poll.
+- **Scheduling:** every show keeps its own next-due in `auto_state` (`next:<id>`), re-anchored
+  when its schedule is edited; weekly delivery picks a weekday (Monday = 0). A digest drop with
+  nothing recent above its relevance bar is skipped and logged.
+- **Story shows:** each drop takes the next idea line (rotating through the list) and queues a
+  normal fiction brief — no feeds, no search key, no scoring.
 - **Generation:** the queued digest is a normal brief — the existing job pipeline (research,
   script, TTS, Library) is unchanged. Queue controls and the Library view work as for any
   episode.

@@ -99,6 +99,79 @@ def job_state(jid):
     return req("GET", f"{BASE}/api/jobs/{jid}")[1]
 
 
+def scenario_auto():
+    """Scheduler internals run in-process (threads only start in __main__), against their own
+    throwaway data dir — deterministic `now` values instead of clock racing."""
+    data = tempfile.mkdtemp(prefix="podwave-auto-test-")
+    old_data = os.environ.get("PODWAVE_DATA")
+    os.environ["PODWAVE_DATA"] = data
+    sys.path.insert(0, os.path.join(ROOT, "server"))
+    try:
+        import podwave as pw
+        a = pw.clean_auto({"enabled": True, "feeds": ["https://example.org/feed"],
+                           "watch": ["AI"], "cadence": "weekly", "weekday": 4,
+                           "hour": 7, "minute": 30, "stories": 3, "minutes": 12})
+        s0 = a["shows"][0]
+        check("legacy auto config migrates to a show",
+              s0["kind"] == "digest" and s0["cadence"] == "weekly" and s0["weekday"] == 4
+              and s0["stories"] == 3 and s0["feeds"] == ["https://example.org/feed"] and bool(s0["id"]),
+              json.dumps(s0)[:160])
+        a = pw.clean_auto({"enabled": True, "maxAgeHours": 48, "pollMinutes": 180, "shows": [
+            {"id": "news", "name": "News", "kind": "digest", "watch": ["AI"], "hour": 7, "stories": 4},
+            {"id": "bed", "name": "Bedtime", "kind": "story", "prompt": "One\nTwo",
+             "cadence": "weekly", "weekday": 6, "minutes": 5}]})
+        cfg = pw.load_config()
+        with open(os.path.join(data, "config.json"), "w") as fh:
+            json.dump({"auto": a}, fh)
+        now = time.time()
+        j1, _ = pw.plan_show(a["shows"][1], a, cfg, now)
+        j2, _ = pw.plan_show(a["shows"][1], a, cfg, now)
+        b1 = json.loads(pw.one("SELECT brief FROM jobs WHERE id=?", (j1,))["brief"])
+        b2 = json.loads(pw.one("SELECT brief FROM jobs WHERE id=?", (j2,))["brief"])
+        check("story automation queues a fiction brief",
+              b1["genre"] == "fiction" and b2["genre"] == "fiction", json.dumps(b1)[:140])
+        check("story ideas rotate per drop",
+              b1["topics"] == ["One"] and b2["topics"] == ["Two"], str((b1["topics"], b2["topics"])))
+        for h, tags, used in [("a", "News", "[]"), ("b", "Other", "[]"),
+                              ("c", "News", '["news"]'), ("d", "", "[]")]:
+            pw.q("INSERT INTO seen(url_hash,url,title,first,last,score,tags,used_by) VALUES(?,?,?,?,?,?,?,?)",
+                 (h, "https://s/" + h, "t-" + h, now, now, 8, tags, used))
+        got = sorted(c["url_hash"] for c in pw.pick_for_show(a["shows"][0], a, now))
+        check("digest picks tagged + untagged, skips other shows' and used",
+              got == ["a", "d"], str(got))
+        pw._st_set("last_poll", now)                    # poll already "happened" — no network
+        for s in a["shows"]:
+            pw._st_set("sched:" + s["id"],
+                       json.dumps([s["kind"], s["cadence"], s["hour"], s["minute"], s["weekday"]]))
+            pw._st_set("next:" + s["id"], now - 1)      # both due right now
+        n0 = pw.one("SELECT count(*) n FROM jobs")["n"]
+        pw.auto_tick(now)
+        check("tick fires every due automation once",
+              pw.one("SELECT count(*) n FROM jobs")["n"] == n0 + 2,
+              str(pw.one("SELECT count(*) n FROM jobs")["n"] - n0))
+        pw.auto_tick(now + 5)
+        check("no double fire before next due",
+              pw.one("SELECT count(*) n FROM jobs")["n"] == n0 + 2)
+        a2 = pw.clean_auto({"enabled": True, "shows": [dict(a["shows"][0], enabled=False), a["shows"][1]]})
+        with open(os.path.join(data, "config.json"), "w") as fh:
+            json.dump({"auto": a2}, fh)
+        for s in a2["shows"]:
+            pw._st_set("next:" + s["id"], now + 900)
+        pw._st_set("next:bed", now + 30)
+        pw._st_set("next:news", now + 30)
+        pw.auto_tick(now + 31)                          # only Bedtime due, News disabled anyway
+        check("disabled automations never fire",
+              pw.one("SELECT count(*) n FROM jobs")["n"] == n0 + 3
+              and json.loads(pw.rows("SELECT brief FROM jobs ORDER BY rowid DESC LIMIT 1")[0]["brief"])["genre"] == "fiction",
+              str(pw.one("SELECT count(*) n FROM jobs")["n"] - n0))
+    finally:
+        if old_data is None:
+            os.environ.pop("PODWAVE_DATA", None)
+        else:
+            os.environ["PODWAVE_DATA"] = old_data
+        shutil.rmtree(data, ignore_errors=True)
+
+
 def main():
     mock = subprocess.Popen([PY, os.path.join(HERE, "mockprovider.py"), str(MOCK_PORT)],
                             stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
@@ -125,6 +198,7 @@ def main():
         scenario_errors(tmp)
         scenario_connection_tests(tmp)
         scenario_static()
+        scenario_auto()
     finally:
         for p in PROCS + [mock]:
             p.terminate()
