@@ -128,6 +128,13 @@ def scenario_auto():
         j2, _ = pw.plan_show(a["shows"][1], a, cfg, now)
         b1 = json.loads(pw.one("SELECT brief FROM jobs WHERE id=?", (j1,))["brief"])
         b2 = json.loads(pw.one("SELECT brief FROM jobs WHERE id=?", (j2,))["brief"])
+        r1 = pw.one("SELECT series_id, ep_no FROM jobs WHERE id=?", (j1,))
+        r2 = pw.one("SELECT series_id, ep_no FROM jobs WHERE id=?", (j2,))
+        ser = pw.one("SELECT * FROM series WHERE id=?", (r1["series_id"],))
+        check("automation drops land in one open-ended series",
+              r1["series_id"] == r2["series_id"] and (r1["ep_no"], r2["ep_no"]) == (1, 2)
+              and ser["total"] == 0 and ser["source"] == "auto" and ser["title"] == "Bedtime",
+              json.dumps(dict(ser))[:160])
         check("story automation queues a fiction brief",
               b1["genre"] == "fiction" and b2["genre"] == "fiction", json.dumps(b1)[:140])
         check("story ideas rotate per drop",
@@ -149,6 +156,9 @@ def scenario_auto():
         check("tick fires every due automation once",
               pw.one("SELECT count(*) n FROM jobs")["n"] == n0 + 2,
               str(pw.one("SELECT count(*) n FROM jobs")["n"] - n0))
+        check("each automation show keeps its own series",
+              sorted(x["title"] for x in pw.rows("SELECT title FROM series")) == ["Bedtime", "News"],
+              json.dumps(pw.rows("SELECT title FROM series"))[:160])
         pw.auto_tick(now + 5)
         check("no double fire before next due",
               pw.one("SELECT count(*) n FROM jobs")["n"] == n0 + 2)
@@ -164,6 +174,20 @@ def scenario_auto():
               pw.one("SELECT count(*) n FROM jobs")["n"] == n0 + 3
               and json.loads(pw.rows("SELECT brief FROM jobs ORDER BY rowid DESC LIMIT 1")[0]["brief"])["genre"] == "fiction",
               str(pw.one("SELECT count(*) n FROM jobs")["n"] - n0))
+        sid = r1["series_id"]
+        last = pw.one("SELECT MAX(ep_no) n FROM jobs WHERE series_id=?", (sid,))["n"]
+        pw.q("DELETE FROM jobs WHERE series_id=?", (sid,))
+        j3, _ = pw.plan_show(a["shows"][1], a, cfg, now)
+        r3 = pw.one("SELECT series_id, ep_no FROM jobs WHERE id=?", (j3,))
+        check("automation numbering survives removal of all old jobs",
+              r3["series_id"] == sid and r3["ep_no"] == last + 1)
+        # More than the library's recent-episode limit, deliberately completed out of order.
+        for ep_no in range(301, 0, -1):
+            pw.q("INSERT INTO episodes(id,title,created,script,series_id,ep_no) VALUES(?,?,?,'[]',?,?)",
+                 (302 - ep_no, "Episode", now, sid, ep_no))
+        stored = next(x for x in pw.series_rows() if x["id"] == sid)
+        check("series history includes every episode in episode order",
+              stored["count"] == 301 and [e["series"]["ep"] for e in stored["episodes"]] == list(range(1, 302)))
     finally:
         if old_data is None:
             os.environ.pop("PODWAVE_DATA", None)
@@ -191,6 +215,7 @@ def main():
         scenario_basic(tmp)
         scenario_story_fields(tmp)
         scenario_hosts(tmp)
+        scenario_series(tmp)
         scenario_chat(tmp)
         scenario_no_key(tmp)
         scenario_cancel_queued()
@@ -389,6 +414,80 @@ def scenario_hosts(tmp):
     check("chat name update survives cleanup", r.get("updates") == {"hosts": ["Freja", "Mikkel"]},
           json.dumps(r)[:180])
     control(chatUpdates={})
+
+
+def scenario_series(tmp):
+    """`episodes: N` on the create call fans the brief out into a series of N ordered jobs;
+    automation shows get one open-ended series each (covered in scenario_auto)."""
+    print("\n== series: several episodes in one job ==")
+    control(beats=2, delay=0.0, failLLM=False, failTTS=False)
+    code, j = submit(topics=["The lighthouse keeper"], minutes=2,
+                     extra={"episodes": 2, "series": "Signal & Static"})
+    ser = j.get("series") or {}
+    check("series accepted with one job per episode",
+          code == 202 and ser.get("total") == 2 and len(ser.get("jobs") or []) == 2
+          and j.get("id") == ser["jobs"][0], json.dumps(j)[:160])
+    jids = ser["jobs"]
+    detail = job_state(jids[0])
+    check("job detail carries series metadata", (detail.get("series") or {}).get("id") == ser["id"])
+    for jid in jids:
+        wait_for(lambda x=jid: job_state(x)["state"] in ("done", "error", "canceled"), 40)
+    ds = [job_state(x) for x in jids]
+    check("every episode of the series finished", all(d["state"] == "done" for d in ds),
+          json.dumps([d.get("error", "") for d in ds])[:150])
+    jobs = req("GET", BASE + "/api/jobs")[1]["jobs"]
+    jrows = {x["id"]: x for x in jobs if x["id"] in jids}
+    check("job rows carry the series pointer",
+          all(x["series"] and x["series"]["id"] == ser["id"] and x["series"]["title"] == "Signal & Static"
+              for x in jrows.values()) and [jrows[k]["series"]["ep"] for k in jids] == [1, 2],
+          json.dumps([x.get("series") for x in jrows.values()])[:180])
+    prompt = (req("GET", MOCK + "/__last")[1].get("chat") or {}).get("messages", [{}])[-1].get("content", "")
+    check("series position reaches the model", "Signal & Static" in prompt and "episode 2 of 2" in prompt,
+          prompt[:160])
+    code, sl, _ = req("GET", BASE + "/api/series")
+    s = [x for x in sl.get("series", []) if x["id"] == ser["id"]]
+    check("series lists its episodes in order",
+          code == 200 and s and s[0]["count"] == 2 and s[0]["source"] == "manual"
+          and [e["id"] for e in s[0]["episodes"]] == sorted(d["episode_id"] for d in ds),
+          json.dumps(s)[:200])
+    eps = req("GET", BASE + "/api/episodes")[1]["episodes"]
+    mine = {e["id"]: e for e in eps if (e.get("series") or {}).get("id") == ser["id"]}
+    check("episodes carry series position + total",
+          len(mine) == 2 and {e["series"]["ep"] for e in mine.values()} == {1, 2}
+          and all(e["series"]["total"] == 2 and e["series"]["title"] == "Signal & Static"
+                  for e in mine.values()), json.dumps(list(mine.values()))[:200])
+    others = [e for e in eps if e["id"] not in mine]
+    check("plain episodes stay series-less", bool(others) and all(e.get("series") is None for e in others),
+          str(len(others)))
+    code2, j1 = submit(topics=["No series here"], minutes=2)
+    ok1 = wait_for(lambda: job_state(j1["id"])["state"] in ("done", "error"), 40)
+    check("one-episode create makes no series",
+          code2 == 202 and "series" not in j1 and bool(ok1) and job_state(j1["id"])["state"] == "done",
+          str(j1)[:120])
+    code, r, _ = req("DELETE", BASE + "/api/series/" + ser["id"])
+    files_gone = all(not os.path.exists(os.path.join(tmp, "audio", str(d["episode_id"]) + ".wav")) for d in ds)
+    check("deleting a series removes its episodes and jobs",
+          code == 200 and r.get("ok") and files_gone
+          and req("GET", BASE + f"/api/episodes/{ds[0]['episode_id']}/audio", raw=True)[0] == 404
+          and req("GET", BASE + f"/api/jobs/{jids[0]}")[0] == 404
+          and not any(x["id"] == ser["id"] for x in req("GET", BASE + "/api/series")[1]["series"]), str(r))
+    check("unknown series 404", req("GET", BASE + "/api/series/nope")[0] == 404)
+
+    # the count is clamped to 12; cancel straight away so the clamp test stays cheap
+    control(delay=0.3)
+    code, j2 = submit(topics=["Count clamped"], minutes=2, extra={"episodes": 99})
+    ids = j2["series"]["jobs"]
+    check("active series cannot be deleted", req("DELETE", BASE + "/api/series/" + j2["series"]["id"])[0] == 409)
+    check("episode count clamped to 12", code == 202 and len(ids) == 12, str(len(ids)))
+    for x in ids:
+        req("POST", BASE + f"/api/jobs/{x}/cancel")
+    ok = wait_for(lambda: all(job_state(x)["state"] in ("done", "error", "canceled", "canceling")
+                              and job_state(x)["state"] != "canceling"
+                              for x in ids), 40)
+    check("clamped series jobs all reached a final state", bool(ok),
+          json.dumps([job_state(x)["state"] for x in ids])[:180])
+    req("DELETE", BASE + "/api/series/" + j2["series"]["id"])
+    control(delay=0.0)
 
 
 def scenario_chat(tmp):

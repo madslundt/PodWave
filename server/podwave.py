@@ -44,7 +44,7 @@ DATA = os.path.abspath(os.environ.get("PODWAVE_DATA") or os.path.join(HERE, ".."
 STATIC = os.path.abspath(os.environ.get("PODWAVE_STATIC") or os.path.join(HERE, "..", "public"))
 PORT = int(os.environ.get("PODWAVE_PORT") or 8080)
 BIND = os.environ.get("PODWAVE_BIND") or "127.0.0.1"
-VERSION = "1.11.0"
+VERSION = "1.12.0"
 
 WORDS_PER_MIN = 150
 GAP_SECONDS = 0.15   # default pause between lines
@@ -205,11 +205,22 @@ def db() -> sqlite3.Connection:
                   first REAL NOT NULL, last REAL NOT NULL,
                   score INTEGER NOT NULL DEFAULT -1, used INTEGER NOT NULL DEFAULT 0);
                 CREATE TABLE IF NOT EXISTS auto_state(k TEXT PRIMARY KEY, v TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS series(
+                  id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '',
+                  created REAL NOT NULL, total INTEGER NOT NULL DEFAULT 0,
+                  source TEXT NOT NULL DEFAULT 'manual', show_id TEXT NOT NULL DEFAULT '');
                 """
             )
             for col in ("tags TEXT DEFAULT ''", "used_by TEXT DEFAULT '[]'"):
                 try:                                        # multi-automation bookkeeping (1.11)
                     _db.execute("ALTER TABLE seen ADD COLUMN " + col)
+                except sqlite3.OperationalError:            # already migrated
+                    pass
+            for tbl, col in (("jobs", "series_id TEXT DEFAULT ''"), ("jobs", "ep_no INTEGER DEFAULT 0"),
+                             ("episodes", "series_id TEXT DEFAULT ''"), ("episodes", "ep_no INTEGER DEFAULT 0"),
+                             ("series", "last_ep INTEGER NOT NULL DEFAULT 0")):
+                try:                                        # series support (1.12)
+                    _db.execute(f"ALTER TABLE {tbl} ADD COLUMN {col}")
                 except sqlite3.OperationalError:            # already migrated
                     pass
             _db.commit()
@@ -777,7 +788,7 @@ class Worker(threading.Thread):
 
 def queue_get():
     with _db_lock:
-        r = db().execute("SELECT id FROM jobs WHERE state='queued' ORDER BY created LIMIT 1").fetchone()
+        r = db().execute("SELECT id FROM jobs WHERE state='queued' ORDER BY created, rowid LIMIT 1").fetchone()
         if not r:
             return None
         db().execute("UPDATE jobs SET state='running', updated=? WHERE id=?", (time.time(), r["id"]))
@@ -845,6 +856,16 @@ def run_job(job_id):
     if brief.get("hosts") != names:
         brief["hosts"] = names
         q("UPDATE jobs SET brief=? WHERE id=?", (json.dumps(brief), job_id))
+
+    # a series episode carries its position so the writer can frame it as the next entry
+    series_line = ""
+    srow = one("SELECT * FROM series WHERE id=?", (job.get("series_id") or "",)) if job.get("series_id") else None
+    if srow:
+        ep_no = int(job.get("ep_no") or 1)
+        which = (f"episode {ep_no} of {int(srow['total'])}" if srow["total"]
+                 else f"episode {ep_no} of an ongoing series")
+        series_line = (f"\nSeries: “{srow['title']}” — {which}. This episode must stand on its own, "
+                       "but also fit naturally as the next entry in the series.\n")
 
     def sname(key):  # display name for a speaker slot (never "A"/"B")
         return names[min(slot_index(key), len(names) - 1)]
@@ -932,7 +953,7 @@ def run_job(job_id):
             {"role": "user", "content": f"""Topic(s): {" | ".join(topics)}
 Genre: {"fictional story with named characters and a plot" if genre == "fiction" else "non-fiction episode"}
 Format: {"two-host conversation" if fmt == "duo" else "solo narration"}
-Hosts: {", ".join(names)}
+Hosts: {", ".join(names)}{series_line}
 Target total length: about {words} spoken words.
 Style: {style or "natural, engaging, conversational"}
 {lang_line}
@@ -966,7 +987,7 @@ Respond JSON: {{"title":"catchy episode title","description":"one-sentence episo
         raw = llm_call(llm_prof, [
             {"role": "system", "content": SYS_PROMPT},
             {"role": "user", "content": f"""Episode: "{outline.get('title')}" — {outline.get('description')}
-Topic(s): {" | ".join(topics)} · Genre: {genre} · {fmt_line}
+Topic(s): {" | ".join(topics)} · Genre: {genre} · {fmt_line}{series_line}
 Style: {style or "natural and engaging"}
 {lang_line}
 {ctx_block}
@@ -1030,7 +1051,8 @@ Respond JSON: {{"segments":[{{"speaker":{keys_or},"text":"spoken words"}}]}}""",
     job_progress(job_id, 0, 1, "encoding", "Joining audio…")
     audio, seconds = concat_wav(paths, speech_gaps(segments, beat_starts))
     ep_id = add_episode(outline.get("title") or topics[0], outline.get("description") or "",
-                        audio, seconds, segments, sources, brief)
+                        audio, seconds, segments, sources, brief,
+                        series_id=job.get("series_id") or "", ep_no=int(job.get("ep_no") or 0))
     for p in paths:  # keep the disk tidy; the episode file is what matters
         try:
             os.remove(p)
@@ -1247,24 +1269,72 @@ def run_checks(cfg, target):
 
 # ---------------------------------------------------------------- episodes
 
-def add_episode(title, description, audio, seconds, segments, sources, brief, ep_id=None):
+def add_episode(title, description, audio, seconds, segments, sources, brief, ep_id=None,
+                series_id="", ep_no=0):
     ep_id = ep_id or int(time.time() * 1000)
     os.makedirs(AUDIO_DIR, exist_ok=True)
     with open(os.path.join(AUDIO_DIR, f"{ep_id}.wav"), "wb") as fh:
         fh.write(audio)
-    q("INSERT OR REPLACE INTO episodes(id,title,description,created,seconds,bytes,format,script,sources,brief) "
-      "VALUES(?,?,?,?,?,?,?,?,?,?)",
+    q("INSERT OR REPLACE INTO episodes(id,title,description,created,seconds,bytes,format,script,sources,brief,"
+      "series_id,ep_no) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
       (ep_id, title[:300], description[:600], time.time(), round(seconds, 2), len(audio), "wav",
-       json.dumps(segments), json.dumps(sources[:40]), json.dumps(brief)))
+       json.dumps(segments), json.dumps(sources[:40]), json.dumps(brief), series_id or "", int(ep_no or 0)))
     return ep_id
 
 
-def episode_rows():
+def series_of(ep_or_job_row, sers=None):
+    """The {id,title,total,ep} pointer for a jobs/episodes row, or None when it stands alone."""
+    sid = (ep_or_job_row.get("series_id") or "")
+    if not sid:
+        return None
+    s = (sers or {}).get(sid) or one("SELECT id,title,total FROM series WHERE id=?", (sid,))
+    if not s:
+        return None
+    return {"id": s["id"], "title": s["title"], "total": int(s["total"] or 0),
+            "ep": int(ep_or_job_row.get("ep_no") or 0)}
+
+
+def series_rows():
+    eps = episode_rows(limit=None)
     out = []
-    for r in rows("SELECT * FROM episodes ORDER BY id DESC LIMIT 300"):
+    for r in rows("SELECT * FROM series ORDER BY created DESC"):
+        mine = sorted((e for e in eps if (e.get("series") or {}).get("id") == r["id"]), key=lambda e: (e["series"]["ep"], e["id"]))
+        out.append({**{k: r[k] for k in ("id", "title", "created", "total", "source", "show_id")},
+                    "count": len(mine), "episodes": mine})
+    return out
+
+
+def delete_series(sid):
+    """Remove a series and everything in it: episodes (with files) and jobs."""
+    with _db_lock:
+        if not one("SELECT id FROM series WHERE id=?", (sid,)):
+            return False
+        if one("SELECT id FROM jobs WHERE series_id=? AND state IN ('queued','running','canceling')", (sid,)):
+            raise ValueError("Cancel active jobs before deleting this series")
+        for e in rows("SELECT id FROM episodes WHERE series_id=?", (sid,)):
+            delete_episode(e["id"])
+        q("DELETE FROM jobs WHERE series_id=?", (sid,))
+        q("DELETE FROM auto_state WHERE k LIKE 'series:%' AND v=?", (sid,))
+        q("DELETE FROM series WHERE id=?", (sid,))
+        return True
+
+
+def episode_rows(limit=300, series_id=None):
+    sers = {r["id"]: r for r in rows("SELECT id,title,total FROM series")}
+    out = []
+    sql, args = "SELECT * FROM episodes", []
+    if series_id is not None:
+        sql += " WHERE series_id=?"
+        args.append(series_id)
+    sql += " ORDER BY ep_no, id" if series_id is not None else " ORDER BY id DESC"
+    if limit is not None:
+        sql += " LIMIT ?"
+        args.append(limit)
+    for r in rows(sql, args):
         out.append({"id": r["id"], "title": r["title"], "description": r["description"],
                     "created": r["created"], "seconds": r["seconds"], "bytes": r["bytes"],
-                    "format": r["format"], "url": f"/api/episodes/{r['id']}/audio"})
+                    "format": r["format"], "url": f"/api/episodes/{r['id']}/audio",
+                    "series": series_of(r, sers)})
     return out
 
 
@@ -1441,6 +1511,7 @@ class Handler(BaseHTTPRequestHandler):
                     j["script"] = json.loads(j["script"]) if j["script"] else None
                     j["log"] = [[t, m] for t, m in (json.loads(j["log"]) or [])]
                     j["brief"] = json.loads(j["brief"])
+                    j["series"] = series_of(j)
                     return self.json_out(j)
                 if method == "DELETE":
                     q("DELETE FROM jobs WHERE id=?", (jid,))
@@ -1461,6 +1532,24 @@ class Handler(BaseHTTPRequestHandler):
                 q("UPDATE jobs SET state='queued', stage='queued', error='', message='Re-queued' WHERE id=?", (jid,))
                 return self.json_out({"ok": True})
             return self.json_out({"error": "not found"}, 404)
+
+        if parts[:1] == ["series"]:
+            if len(parts) == 1 and method == "GET":
+                return self.json_out({"series": series_rows()})
+            if len(parts) == 2:
+                srow = one("SELECT * FROM series WHERE id=?", (parts[1],))
+                if not srow:
+                    return self.json_out({"error": "no such series"}, 404)
+                if method == "GET":
+                    return self.json_out({**{k: srow[k] for k in ("id", "title", "created", "total", "source",
+                                                                  "show_id")},
+                                          "episodes": episode_rows(limit=None, series_id=parts[1])})
+                if method == "DELETE":
+                    try:
+                        return self.json_out({"ok": delete_series(parts[1])})
+                    except ValueError as exc:
+                        return self.json_out({"error": str(exc)}, 409)
+            return self.json_out({"error": "method"}, 405)
 
         if parts[:1] == ["episodes"]:
             if len(parts) == 1 and method == "GET":
@@ -1591,11 +1680,32 @@ class Handler(BaseHTTPRequestHandler):
         # names the user typed win; blanks become random ones now, so a retry keeps the same hosts
         brief["hosts"] = host_names(b.get("hosts"), brief["language"],
                                     1 if brief["format"] == "solo" else len(SPEAKER_KEYS))
-        jid = uuid.uuid4().hex[:12]
-        q("INSERT INTO jobs(id,created,updated,state,stage,brief) VALUES(?,?,?,'queued','queued',?)",
-          (jid, time.time(), time.time(), json.dumps(brief)))
-        log(f"job {jid} queued: {brief['genre']}/{brief['format']} {brief['minutes']}m {topics}")
-        return self.json_out({"id": jid, "state": "queued"}, 202)
+        # episodes: 1 = a plain single episode; 2+ = a new series queued as that many ordered jobs
+        try:
+            n_eps = int(b.get("episodes") or 1)
+        except (TypeError, ValueError):
+            n_eps = 1
+        n_eps = max(1, min(12, n_eps))
+        series_title = str(b.get("series") or "").strip()[:120]
+        now = time.time()
+        jids, sid = [], ""
+        if n_eps > 1:
+            sid = uuid.uuid4().hex[:12]
+            brief["episodes"] = n_eps
+            q("INSERT INTO series(id,title,created,total,source,show_id) VALUES(?,?,?,?,'manual','')",
+              (sid, series_title or topics[0], time.time(), n_eps))
+        for k in range(n_eps):
+            jid = uuid.uuid4().hex[:12]
+            q("INSERT INTO jobs(id,created,updated,state,stage,brief,series_id,ep_no) "
+              "VALUES(?,?,?,'queued','queued',?,?,?)",
+              (jid, now + k * 0.001, now, json.dumps(brief), sid, k + 1))
+            jids.append(jid)
+        log(f"job {jids[0]} queued: {brief['genre']}/{brief['format']} {brief['minutes']}m "
+            f"{n_eps}ep{' series ' + series_title if sid and series_title else ''} {topics}")
+        out = {"id": jids[0], "state": "queued"}
+        if sid:
+            out["series"] = {"id": sid, "title": series_title or topics[0], "total": n_eps, "jobs": jids}
+        return self.json_out(out, 202)
 
     def brief_chat(self):
         """One setup-chat turn: the model replies, suggests brief updates, and flags when done."""
@@ -1634,13 +1744,14 @@ class Handler(BaseHTTPRequestHandler):
 
 def job_rows(limit=60):
     out = []
+    sers = {r["id"]: r for r in rows("SELECT id,title,total FROM series")}
     for r in rows("SELECT * FROM jobs ORDER BY created DESC LIMIT ?", (limit,)):
         brief = json.loads(r["brief"])
         out.append({"id": r["id"], "created": r["created"], "updated": r["updated"], "state": r["state"],
                     "stage": r["stage"], "message": r["message"], "error": r["error"],
                     "done": r["done"], "total": r["total"], "episode_id": r["episode_id"],
                     "title": (json.loads(r["script"]) or {}).get("title") if r["script"] else None,
-                    "brief": brief,
+                    "brief": brief, "series": series_of(r, sers),
                     "topics": brief.get("topics"), "minutes": brief.get("minutes"), "genre": brief.get("genre")})
     return out
 
@@ -1844,8 +1955,23 @@ def plan_show(s, a, cfg, now=None, cand=None):
         brief["llm"] = ""
     brief["hosts"] = host_names(None, brief["language"])
     jid = uuid.uuid4().hex[:12]
-    q("INSERT INTO jobs(id,created,updated,state,stage,brief) VALUES(?,?,?,'queued','queued',?)",
-      (jid, time.time(), time.time(), json.dumps(brief)))
+    # every automation show drops into its own open-ended series (the count is unknown up front)
+    with _db_lock:
+        sid = _st_get("series:" + s["id"], "")
+        if not sid or not one("SELECT id FROM series WHERE id=?", (sid,)):
+            sid = uuid.uuid4().hex[:12]
+            q("INSERT INTO series(id,title,created,total,source,show_id) VALUES(?,?,?,0,'auto',?)",
+              (sid, s["name"][:120], time.time(), s["id"]))
+            _st_set("series:" + s["id"], sid)
+        # Keep numbering even after old jobs and episodes have been removed.
+        last = one("SELECT last_ep FROM series WHERE id=?", (sid,))["last_ep"]
+        highest = one("SELECT COALESCE(MAX(ep_no),0) n FROM "
+                      "(SELECT ep_no FROM jobs WHERE series_id=? UNION ALL "
+                      "SELECT ep_no FROM episodes WHERE series_id=?)", (sid, sid))["n"]
+        ep_no = max(last, highest) + 1
+        q("UPDATE series SET last_ep=?, title=? WHERE id=?", (ep_no, s["name"][:120], sid))
+        q("INSERT INTO jobs(id,created,updated,state,stage,brief,series_id,ep_no) "
+          "VALUES(?,?,?,'queued','queued',?,?,?)", (jid, time.time(), time.time(), json.dumps(brief), sid, ep_no))
     for c in cand:
         q("UPDATE seen SET used=1, used_by=? WHERE url_hash=?",
           (json.dumps(sorted(set(json.loads(c["used_by"] or "[]")) | {s["id"]})), c["url_hash"]))
@@ -1926,11 +2052,13 @@ class Auto(threading.Thread):
 def health():
     c = one("SELECT count(*) n FROM jobs WHERE state IN ('queued','running','canceling')") or {"n": 0}
     e = one("SELECT count(*) n, COALESCE(sum(seconds),0) s FROM episodes") or {"n": 0, "s": 0}
+    se = one("SELECT count(*) n FROM series") or {"n": 0}
     cfg = load_config()
     return {"ok": True, "version": VERSION, "time": time.time(),
             "config": masked_config(cfg),
             "queue": {"active": c["n"], "worker": bool(WORKER.current if WORKER else None)},
             "episodes": {"count": e["n"], "seconds": round(e["s"], 1)},
+            "series": {"count": se["n"]},
             "public": True, "ffmpeg": bool(shutil_ffmpeg())}
 
 

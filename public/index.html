@@ -78,6 +78,10 @@ audio{width:100%;margin-top:10px;border-radius:10px}
 .libitem:hover{border-color:#33436b}
 .libitem h3{margin:0;font-size:15.5px}
 .libitem .meta{font-size:12.5px;color:var(--dim);margin:3px 0 8px}
+.series-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;margin:18px 2px 2px;padding:0 2px;
+  font-size:14px;color:var(--acc2)}
+.series-head b{overflow-wrap:anywhere;min-width:0}
+.series-head:first-child{margin-top:2px}
 #chat-fab{position:fixed;right:18px;bottom:18px;width:58px;height:58px;border-radius:50%;
   background:linear-gradient(135deg,var(--acc),#0084ff);display:flex;align-items:center;justify-content:center;
   font-size:26px;cursor:pointer;box-shadow:0 8px 28px rgba(76,92,255,.45);z-index:90;transition:transform .15s}
@@ -148,7 +152,7 @@ details.more>summary:hover{color:var(--text)}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1c2438;
  border:1px solid #33436b;border-radius:12px;padding:10px 18px;font-size:14px;display:none;z-index:50;max-width:90%;
  box-shadow:0 10px 34px rgba(0,0,0,.5)}
-@media (max-width:560px){ .row{flex-direction:column} nav{width:100%} nav button{flex:1} }
+@media (max-width:560px){ .row{flex-direction:column} nav{width:100%} nav button{flex:1;min-width:0;padding:9px 8px} }
 </style>
 </head>
 <body>
@@ -210,6 +214,17 @@ details.more>summary:hover{color:var(--text)}
       <div>
         <label class="f">Model</label>
         <select id="modelsel" title="The LLM that writes this episode and runs the setup chat"></select>
+      </div>
+    </div>
+    <div id="series-fields" class="row hidden" style="margin-top:8px">
+      <div>
+        <label class="f" for="episodes">Episodes</label>
+        <input type="number" id="episodes" min="1" max="12" value="1"
+               title="1 = one episode. 2–12 queues a series that the server makes one episode after another.">
+      </div>
+      <div>
+        <label class="f" for="series-name">Series name (optional)</label>
+        <input type="text" id="series-name" maxlength="120" placeholder="blank = your first topic">
       </div>
     </div>
     <div id="fields-nf">
@@ -867,7 +882,9 @@ function readBrief(){
            tone:$("f-tone").value, characters:$("f-characters").value.trim(),
            setting:$("f-setting").value.trim(), twist:$("f-twist").checked,
            angle:$("n-angle").value.trim(), language:$("language").value,
-           hosts:hostNamesInForm() };
+           hosts:hostNamesInForm(),
+           episodes:Math.max(1,Math.min(12,Math.round(+$("episodes").value)||1)),
+           series:$("series-name").value.trim() };
 }
 async function post(url,headers,body){
   const r=await fetch(url,{method:"POST",headers:Object.assign({"Content-Type":"application/json"},headers),body:JSON.stringify(body)});
@@ -965,6 +982,11 @@ Rules:
 async function buildScript(){
   aborting=false; $("btn-stop").style.display="";
   const b = readBrief();
+  if(b.episodes > 1){
+    $("btn-stop").style.display="none";
+    status("To create a series, use Send to background. Each episode is generated on the server.", "err");
+    return;
+  }
   const prof = activeLlmProf();
   if(srv){ const s=chosenServerLlm();
     if(s && !cfg.llms.some(p=>p.name===s.name))
@@ -1302,6 +1324,7 @@ async function detectServer(){
   catch(e){ srv = null; }
   if(!srv) return;
   $("btn-queue").style.display = "";
+  $("series-fields").classList.toggle("hidden", !srv.series);
   $("server-config").classList.remove("hidden");
   $("chat-fab").style.display = "flex";
   renderServerLibrary(); refreshJobs();
@@ -1312,7 +1335,7 @@ function jobRow(j){
   const d = document.createElement("div"); d.className = "libitem";
   const pct = j.total ? Math.round(100*j.done/j.total) : 0;
   d.innerHTML = `<h3>${esc(j.title || (j.topics||[]).join(" · ") || j.id)}</h3>
-    <div class="meta">${esc(j.genre||"")} · ${j.minutes||"?"} min · ${fmtAge(j.created)} · <b>${esc(j.state)}</b>${j.state==="running"?` — ${pct}%`:""}</div>
+    <div class="meta">${esc(j.genre||"")} · ${j.minutes||"?"} min · ${fmtAge(j.created)} · <b>${esc(j.state)}</b>${j.state==="running"?` — ${pct}%`:""}${j.series?` · Series: ${esc(j.series.title)} — episode ${j.series.ep}${j.series.total?"/"+j.series.total:""}`:""}</div>
     <div class="small">${esc(j.message||"")}</div>`;
   if(["queued","running","canceling"].includes(j.state)){
     const p = document.createElement("progress"); p.max = j.total||1; p.value = j.done; p.style.width="100%"; d.appendChild(p);
@@ -1351,7 +1374,8 @@ $("btn-queue").onclick = async () => {
   try{
     const r = await srvApi("/api/jobs", {method:"POST", body:JSON.stringify(b)});
     resetBrief();
-    toast(`Story queued (${r.id}) — it runs under “Being created” in the Library.`);
+    toast(r.series ? `Series “${r.series.title}” queued — ${r.series.total} episodes, made one after another under “Being created”.`
+                   : `Story queued (${r.id}) — it runs under “Being created” in the Library.`);
     showTab("library");
   }catch(e){ status("Could not queue the job: "+e.message, "err"); }
 };
@@ -1366,16 +1390,17 @@ function saveDraft(){
     minutes:+$("minutes").value||10, style:$("style").value.trim(),
     tone:$("f-tone").value, characters:$("f-characters").value.trim(),
     setting:$("f-setting").value.trim(), twist:$("f-twist").checked,
-    angle:$("n-angle").value.trim(), language:$("language").value})}).catch(()=>{}), 800);
+    angle:$("n-angle").value.trim(), language:$("language").value,
+    episodes:readBrief().episodes, series:$("series-name").value.trim()})}).catch(()=>{}), 800);
 }
-for(const id of ["topics","genre","format","minutes","language","style","n-angle","f-tone","f-characters","f-setting","f-twist","h-name1","h-name2"]) $(id).addEventListener("change", saveDraft);
+for(const id of ["topics","genre","format","minutes","language","style","n-angle","f-tone","f-characters","f-setting","f-twist","h-name1","h-name2","episodes","series-name"]) $(id).addEventListener("change", saveDraft);
 $("topics").addEventListener("input", saveDraft);
 
 /* the brief lives only in this page: switching tabs keeps it, a refresh starts blank,
    and leaving the page with a half-written story asks first. */
 const BRIEF_DEFAULTS = {topics:"", genre:"nonfiction", format:"duo", minutes:"10", language:"", style:"",
                         "n-angle":"", "f-tone":"", "f-characters":"", "f-setting":"", "f-twist":false,
-                        "h-name1":"", "h-name2":""};
+                        "h-name1":"", "h-name2":"", episodes:"1", "series-name":""};
 function briefDirty(){
   for(const [id, dv] of Object.entries(BRIEF_DEFAULTS)){
     const el = $(id);
@@ -1539,9 +1564,10 @@ async function renderServerLibrary(){
   card.classList.toggle("hidden", !eps.length);
   if(!eps.length) return;
   box.innerHTML = "";
-  for(const e of eps){
+  const item = (e) => {
     const d = document.createElement("div"); d.className = "libitem";
-    d.innerHTML = `<h3>${esc(e.title)}</h3><div class="meta">${new Date(e.created*1000).toLocaleString()} · ${(e.seconds/60).toFixed(1)} min · ${(e.bytes/1048576).toFixed(1)} MB</div>`;
+    const s = e.series;
+    d.innerHTML = `<h3>${esc(e.title)}</h3><div class="meta">${new Date(e.created*1000).toLocaleString()} · ${(e.seconds/60).toFixed(1)} min · ${(e.bytes/1048576).toFixed(1)} MB${s?` · Episode ${s.ep}${s.total?"/"+s.total:""}`:""}</div>`;
     const a = document.createElement("audio"); a.controls = true; a.preload = "none"; a.src = e.url; d.appendChild(a);
     d.appendChild(paceRow());
     const row = document.createElement("div"); row.className = "btnrow";
@@ -1564,7 +1590,23 @@ async function renderServerLibrary(){
       catch(err){ toast("Delete failed: "+err.message); }
     };
     row.appendChild(del);
-    d.appendChild(row); box.appendChild(d);
+    d.appendChild(row); return d;
+  };
+  // episodes of one series render as a block with a header; everything else stays as before
+  const groups = [], at = {};
+  for(const e of eps){
+    const key = e.series ? e.series.id : "\u0000";
+    if(key in at){ groups[at[key]].items.push(e); continue; }
+    at[key] = groups.length; groups.push({s: e.series || null, items: [e]});
+  }
+  for(const g of groups){
+    if(g.s){
+      g.items.sort((a,b) => a.series.ep - b.series.ep || a.id - b.id);        // inside a series: episode 1 first
+      const h = document.createElement("div"); h.className = "series-head";
+      h.innerHTML = `📺 <b>${esc(g.s.title)}</b> <span class="small">${g.items.length}${g.s.total?"/"+g.s.total:""} episode${(g.s.total===1&&g.items.length===1)?"":"s"}${g.s.total?"":" so far"}</span>`;
+      box.appendChild(h);
+    }
+    for(const e of g.items) box.appendChild(item(e));
   }
   paceApply();
 }

@@ -8,7 +8,13 @@ close the tab.
 
 1. **Brief** — topics (one per line), genre (non-fiction / fiction), format (two hosts or
    solo), the hosts' names, target length in minutes, the language to write and speak the
-   episode in (default: the language of your topics) and optional style notes.
+   episode in (default: the language of your topics), optional style notes, and — for a
+   **series** — a number of episodes (1–12; `1` is a single episode) with an optional series
+   name. Picking 2+ and **Send to background** queues all episodes at once from the same brief (same hosts, genre,
+   length); the server makes them one after another and the writer is told the series title
+   and which episode it is, so each one can land as the next entry. Leave the name blank and
+   your first topic becomes it. Automation drops don't take a count — each show's episodes
+   collect in their own open-ended series (see **Automations**).
    **Names**: leave them blank and each story gets random ones when it is created (drawn from
    a pool that matches the episode language, and 🎲 redraws them), so nobody is ever called
    "Host A" — in the script, the model prompts or the error messages. Names are stored with
@@ -64,8 +70,10 @@ own schedule (the scheduler itself runs on the server — see **Settings → Thi
 
 Each show fires daily (any time) or weekly (any weekday + time), so *daily news, a weekly topic
 update and a daily bedtime story* can all run side by side. Automatic episodes enter the regular
-server queue and appear in **Library** when finished; a digest drop with nothing new above its
-relevance bar is skipped. The scheduler uses the server's local timezone and runs only while the
+server queue and appear in **Library** when finished — each show's drops collect in their own
+open-ended series (the episode count is unknown up front), while episodes you queue yourself get
+a series only when you ask for more than one. A digest drop with nothing new above its relevance
+bar is skipped. The scheduler uses the server's local timezone and runs only while the
 server is up. Details and limitations are in [docs/AUTOGENERATION.md](docs/AUTOGENERATION.md).
 
 The page you are on is kept in the URL (`#/create`, `#/library`, `#/settings`), so a refresh
@@ -133,16 +141,18 @@ token — every `/api/*` endpoint is public. Keys can also be seeded with
 
 | | |
 |---|---|
-| `GET /api/health` | version, masked config, queue and library counts |
+| `GET /api/health` | version, masked config, queue, library and series counts |
 | `GET/PUT /api/config` | server config, keys masked (`keySet: true`) |
 | `GET/PUT /api/brief` | last brief stored on the server (the page keeps the draft locally and never restores it into the form) |
 | `POST /api/brief/chat` | `{messages:[{role,content}], brief}` → `{reply, updates, done}` — one setup-chat turn; `updates` are validated against the real brief fields, `done` means the model considers the brief ready (and always obeys a stop) |
 | `POST /api/test` | `{target: llm\|search\|tts\|all, llm?, search?, tts?}` → per-provider `ok`/`fail`/`unset` with detail; overrides are used in memory only |
-| `POST /api/jobs` | `{topics[], genre, format, minutes, style, language?, hosts?, tone?, characters?, setting?, twist?, angle?}` → `202 {id}` (`hosts` = display names per speaker slot, blanks filled at random) |
-| `GET /api/jobs` / `GET /api/jobs/{id}` | list / detail with stage, progress, log |
+| `POST /api/jobs` | `{topics[], genre, format, minutes, style, language?, hosts?, tone?, characters?, setting?, twist?, angle?, episodes?, series?}` → `202 {id}` (`hosts` = display names per speaker slot, blanks filled at random). `episodes` 2–12 creates a **series**: one job per episode, made in order, answered as `{id, series:{id,title,total,jobs}}`; `series` is its optional name |
+| `GET /api/jobs` / `GET /api/jobs/{id}` | list / detail with stage, progress, log (list rows carry `series: {id,title,total,ep}` or `null`) |
 | `POST /api/jobs/{id}/cancel` \| `/retry` | stop, or re-queue a failed job |
 | `DELETE /api/jobs/{id}` | forget the job (audio already stored is kept) |
-| `GET /api/episodes` | stored episodes |
+| `GET /api/episodes` | stored episodes, each with a `series` pointer or `null` |
+| `GET /api/series` | all series (manual ones plus one open-ended series per automation show) with their episodes |
+| `GET/DELETE /api/series/{id}` | one series, or delete it together with its episodes (audio files included) and jobs; cancel active jobs first (`409` otherwise) |
 | `GET /api/episodes/{id}/audio` | WAV, with `Range` support for seeking |
 | `GET/PUT /api/episodes/{id}/script` | segments (edit text without re-voicing) |
 | `DELETE /api/episodes/{id}` | delete episode + audio file |
@@ -166,12 +176,15 @@ matters to you.
 uv run tests/e2e.py            # or: python3 tests/e2e.py
 ```
 
-Starts the server with a mock OpenAI-compatible provider in a temp dir and checks 108
+Starts the server with a mock OpenAI-compatible provider in a temp dir and checks 126
 things: job lifecycle, cancel and retry, resume after `SIGKILL`, WAV validity and
 duration, beat-aware pacing and loudness matching of the joined audio, the story-brief
 and language fields reaching the model and the voice instructions, host names (typed ones
 kept verbatim, blanks filled at random in their own slot, names reaching the prompts and
-the stored script, and the same names after a retry), setup-chat turns
+the stored script, and the same names after a retry), series fan-out (one ordered job per
+episode, the series title and episode position reaching the model, per-episode and
+series-less listings, delete-with-episodes, the count clamp, and one open-ended series per
+automation show), setup-chat turns
 (brief + history sent, suggested updates clamped to real fields, the stop path, model
 errors), `instructions` sent and cleanly skipped when rejected,
 `Range` requests, masked config, path traversal, error paths, and every
