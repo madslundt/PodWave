@@ -9,6 +9,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 CTRL = {"beats": 3, "segWords": 40, "delay": 0.0, "failLLM": False, "failTTS": False, "ttsFormat": "wav",
         "requireAuth": False, "ttsForceMp3": False, "emptyReply": False, "rejectInstr": False,
+        "failContinuity": False, "ttsBadWav": False, "ttsTruncatedWav": False,
+        "ttsZeroFrames": False, "ttsCalls": 0, "failTTSLine": "",
         "chatReply": "", "chatUpdates": {}, "chatDone": False,
         "models": ["mock-llm", "mock-llm-2", "mock-llm-fast", "mock-tts", "mock-tts-2"]}
 LAST = {}  # last request bodies seen, for tests that assert what the server actually sent
@@ -62,11 +64,18 @@ class H(BaseHTTPRequestHandler):
         time.sleep(CTRL["delay"])
         if self.path == "/__control":
             CTRL.update(body)
+            # every log is scoped to the calls made since the last control write, so a test can
+            # look at the whole sequence of prompts/voices one job produced
+            LAST["chats"], LAST["voices"] = [], []
             return self.out(200, {"ok": True, **CTRL})
         if CTRL["requireAuth"] and not self.headers.get("Authorization"):
             return self.out(401, {"error": {"message": "mock: missing Authorization header"}})
         if self.path.endswith("/chat/completions"):
             LAST["chat"] = body
+            LAST["chats"] = (LAST.get("chats") or [])[-31:] + [body]  # every prompt since the last control
+            user = body["messages"][-1]["content"]
+            if CTRL["failContinuity"] and "Prior completed episodes in this series" in user:
+                return self.out(500, {"error": "mock continuity retry"})
             if CTRL["failLLM"]:
                 return self.out(500, {"error": "mock llm down"})
             first = str(body["messages"][0]["content"]) if body["messages"] else ""
@@ -75,7 +84,6 @@ class H(BaseHTTPRequestHandler):
                                       "updates": CTRL["chatUpdates"] or {},
                                       "done": bool(CTRL["chatDone"])})
             else:
-                user = body["messages"][-1]["content"]
                 if '"beats"' in user:
                     beats = [{"name": f"Beat {i+1}", "words": CTRL["segWords"] * 2,
                               "gist": f"Coverage point {i+1} of the episode."} for i in range(CTRL["beats"])]
@@ -91,15 +99,27 @@ class H(BaseHTTPRequestHandler):
             return self.out(200, {"choices": [{"message": {"role": "assistant", "content": content}}]})
         if self.path.endswith("/audio/speech"):
             LAST["speech"] = body
+            LAST["voices"] = sorted(set(LAST.get("voices") or []) | {str(body.get("voice"))})
+            CTRL["ttsCalls"] += 1
+            LAST["ttsCalls"] = CTRL["ttsCalls"]
             if CTRL["failTTS"]:
                 return self.out(500, {"error": "mock tts down"})
+            if CTRL["failTTSLine"] and CTRL["failTTSLine"] in body.get("input", ""):
+                return self.out(500, {"error": "mock line failure"})
             if CTRL["rejectInstr"] and "instructions" in body:
                 return self.out(400, {"error": {"message": "unknown parameter: instructions"}})
             fmt = body.get("response_format", "wav")
             if CTRL.get("ttsForceMp3"):
                 return self.out(200, b"\xff\xf3\x18\xc4" + b"\x00" * 512, "audio/mpeg")  # provider ignores the format
             if fmt == "wav":
-                return self.out(200, wav(CTRL.get("ttsSeconds", 0.35)), "audio/wav")
+                if CTRL["ttsBadWav"]:
+                    return self.out(200, b"RIFF\x00\x00\x00\x00WAVEfmt ", "audio/wav")
+                if CTRL["ttsZeroFrames"]:
+                    return self.out(200, wav(0), "audio/wav")
+                audio = wav(CTRL.get("ttsSeconds", 0.35))
+                if CTRL["ttsTruncatedWav"]:
+                    audio = audio[:-2400]  # 50 ms of PCM removed without changing the header
+                return self.out(200, audio, "audio/wav")
             return self.out(200, b"\xff\xf3\x18\xc4" + b"\x00" * 512, "audio/mpeg")  # fake mp3
         self.out(404, {"error": "mock: " + self.path})
 

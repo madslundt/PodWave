@@ -176,12 +176,16 @@ matters to you.
 uv run tests/e2e.py            # or: python3 tests/e2e.py
 ```
 
-Starts the server with a mock OpenAI-compatible provider in a temp dir and checks 126
+Starts the server with a mock OpenAI-compatible provider in a temp dir and checks 156
 things: job lifecycle, cancel and retry, resume after `SIGKILL`, WAV validity and
 duration, beat-aware pacing and loudness matching of the joined audio, the story-brief
 and language fields reaching the model and the voice instructions, host names (typed ones
 kept verbatim, blanks filled at random in their own slot, names reaching the prompts and
-the stored script, and the same names after a retry), series fan-out (one ordered job per
+the stored script, and the same names after a retry), the brief matrix — every topic, genre,
+solo/duo, language, angle and the length target (minutes × 150 words) reaching the outline
+and beat prompts, both TTS voices for a duo and only the A voice for a solo, length and
+topic-count clamps, and a finished background episode listed in the Library as playable
+(`Range`), downloadable (served WAV) and restart-proof —, series fan-out (one ordered job per
 episode, the series title and episode position reaching the model, per-episode and
 series-less listings, delete-with-episodes, the count clamp, and one open-ended series per
 automation show), setup-chat turns
@@ -191,6 +195,14 @@ errors), `instructions` sent and cleanly skipped when rejected,
 `/api/test` outcome — passing, model error, empty reply, refused connection, provider
 switched off, and a typed-in key that must never reach `config.json`. Nothing real is
 called. Passing on CPython 3.14.9 and 3.15.2.
+
+Mocks can only prove what the brief *tells* the model (word budget, language, style, names)
+and that audio is well-formed; the delivered wall-clock length against the product's
+±20%-or-1-minute target depends on real TTS pacing and is verified by listening to
+real-provider episodes, not by this suite.
+
+See the [listening evaluation](docs/QUALITY-EVALUATION.md) for the six fixed briefs,
+reviewer rubric, and separate real-provider checks.
 
 ## Notes and limits
 
